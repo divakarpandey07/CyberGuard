@@ -1,0 +1,29 @@
+# Environment / API Keys
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Dataset (large files)
+dataset/
+
+# Generated files
+logs/
+pcap_exports/
+
+# Models (regenerate with train.py)
+backend/models/*.pkl
+backend/models/*.npy
+backend/models/metadata.json
+
+# OS
+.DS_Store
+Thumbs.db
+*.egg-info/
+dist/
+build/
