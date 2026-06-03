@@ -160,3 +160,6 @@ class FlowTracker:
             "_dst_port":f.dst_port,"_protocol":f.protocol,"_timestamp":f.last_seen,
         }
         return feat
+
+
+# optimized flow feature extraction
