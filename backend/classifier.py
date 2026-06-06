@@ -57,3 +57,6 @@ class AttackClassifier:
                 "rule_triggered":bool(rule_label),
                 "recommendation":self.RECS.get(final,""),
                 "ml_label":ml_label,"scores":ml_result.get("scores",{})}
+
+
+# tuned rule confidence parameters
