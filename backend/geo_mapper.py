@@ -180,3 +180,6 @@ class GeoMapper:
             "is_proxy": False, "is_hosting": False, "is_private": False,
             "flag": "",
         }
+
+
+# added GeoIP lookup LRU caching
