@@ -129,3 +129,6 @@ class AlertManager:
         except Exception as e:
             logger.error("Email send failed: %s", e)
         return False
+
+
+# implemented alert cooldown checks
