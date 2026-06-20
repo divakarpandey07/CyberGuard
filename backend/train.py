@@ -308,3 +308,6 @@ def train(fast: bool = False, train_ae: bool = True, do_cv: bool = True):
 if __name__ == "__main__":
     args = parse_args()
     train(fast=args.fast, train_ae=not args.no_ae, do_cv=not args.no_cv)
+
+
+# tuned XGBoost params for fast-mode
