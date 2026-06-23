@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  cyberguard:
+    build: .
+    container_name: cyberguard-ids-v3
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./dataset:/app/dataset          # Mount your CICIDS2017 CSVs here
+      - ./logs:/app/logs                # Persistent logs
+      - ./pcap_exports:/app/pcap_exports
+      - ./backend/models:/app/backend/models  # Trained models persist
+    environment:
+      - CYBERGUARD_SECRET=change-this-secret
+      # Optional - set these for alerts:
+      # - TELEGRAM_BOT_TOKEN=your-token
+      # - TELEGRAM_CHAT_ID=your-chat-id
+      # - ALERT_EMAIL_FROM=you@gmail.com
+      # - ALERT_EMAIL_PASS=your-app-password
+      # - ALERT_EMAIL_TO=recipient@example.com
+      # - ABUSEIPDB_KEY=your-key
+    cap_add:
+      - NET_ADMIN     # for iptables blocking
+      - NET_RAW       # for raw packet capture
+    network_mode: host   # needed for live capture on host interface
+    restart: unless-stopped
+
+# Usage:
+#   docker-compose up -d          # Start in background
+#   docker-compose logs -f        # Watch logs
+#   docker-compose down           # Stop
+#   docker-compose exec cyberguard python3 backend/train.py --fast
