@@ -462,3 +462,6 @@ if __name__ == "__main__":
     socketio.run(app, host=config.HOST, port=config.PORT,
                  debug=config.DEBUG, use_reloader=False,
                  allow_unsafe_werkzeug=True)
+
+
+# optimized server WebSocket event handlers
