@@ -167,6 +167,13 @@ def _process_flow(features: dict):
             "recommendation": cls_result["recommendation"],
             "scores":         cls_result.get("scores", {}),
             "ae_score":       cls_result.get("ae_score", 0.0),
+            "hexdump":        features.get("_hexdump", ""),
+            "target_geo": {
+                "lat": geo._public_geo.get("lat", 0.0),
+                "lon": geo._public_geo.get("lon", 0.0),
+                "country": geo._public_geo.get("country", ""),
+                "city": geo._public_geo.get("city", ""),
+            } if geo._public_geo else None,
             # v3 extras
             "geo":  {
                 "country":      geo_info.get("country", "?"),
@@ -195,6 +202,21 @@ def _process_flow(features: dict):
 
     except Exception as e:
         logger.error("Processing error: %s", e, exc_info=True)
+
+
+def _system_stats_loop():
+    import psutil
+    while True:
+        try:
+            cpu = psutil.cpu_percent(interval=None)
+            ram = psutil.virtual_memory().percent
+            socketio.emit("system_stats", {
+                "cpu": cpu,
+                "ram": ram,
+            })
+        except Exception:
+            pass
+        time.sleep(2)
 
 
 def _processing_loop():
@@ -444,6 +466,8 @@ def _startup():
 
     # Start processing loop
     threading.Thread(target=_processing_loop, daemon=True, name="ProcessingLoop").start()
+    # Start system stats loop
+    threading.Thread(target=_system_stats_loop, daemon=True, name="SystemStatsLoop").start()
 
     logger.info("=" * 60)
     logger.info("🛡️  CyberGuard IDS v4 → http://%s:%d", config.HOST, config.PORT)

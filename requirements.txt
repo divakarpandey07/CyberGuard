@@ -26,6 +26,7 @@ scapy>=2.5.0
 
 # ── HTTP (for GeoIP + Telegram + AbuseIPDB) ───────────────────────────────
 requests>=2.31.0
+psutil>=5.9.0
 
 # ── Dataset Download (optional) ───────────────────────────────────────────
 gdown>=4.7.0

@@ -182,6 +182,7 @@ class PacketSniffer:
                 "protocol": proto, "length": length,
                 "timestamp": ts, "tcp_flags": {},
                 "header_length": ip_hdr_len, "window_size": -1,
+                "_raw_packet": raw_pkt,
             }
 
             if raw_pkt.haslayer(TCP):

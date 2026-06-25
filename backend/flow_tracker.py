@@ -33,6 +33,7 @@ class FlowRecord:
     active_times:List[float]=field(default_factory=list)
     idle_times:List[float]=field(default_factory=list)
     ACTIVE_TIMEOUT:float=0.5;finished:bool=False
+    hexdump:str=""
 
 class FlowTracker:
     def __init__(self):
@@ -63,11 +64,23 @@ class FlowTracker:
                 f.active_start=ts
             f.last_active=ts;f.last_seen=ts
             if is_fwd:
+                if not f.fwd_lengths and not f.bwd_lengths and "_raw_packet" in pkt:
+                    try:
+                        from scapy.utils import hexdump
+                        f.hexdump = hexdump(pkt["_raw_packet"], dump=True)
+                    except Exception:
+                        pass
                 f.fwd_lengths.append(ln);f.fwd_timestamps.append(ts)
                 f.fwd_header_len+=hl;f.psh_flags_fwd+=int(flags.get("P",False))
                 f.urg_flags_fwd+=int(flags.get("U",False))
                 if f.init_win_fwd==-1 and ws>=0: f.init_win_fwd=ws
             else:
+                if not f.fwd_lengths and not f.bwd_lengths and "_raw_packet" in pkt:
+                    try:
+                        from scapy.utils import hexdump
+                        f.hexdump = hexdump(pkt["_raw_packet"], dump=True)
+                    except Exception:
+                        pass
                 f.bwd_lengths.append(ln);f.bwd_timestamps.append(ts)
                 f.bwd_header_len+=hl;f.psh_flags_bwd+=int(flags.get("P",False))
                 f.urg_flags_bwd+=int(flags.get("U",False))
@@ -158,6 +171,7 @@ class FlowTracker:
             "idle_max":round(max(idl)*1e6,4),"idle_min":round(min(idl)*1e6,4),
             "_src_ip":f.src_ip,"_dst_ip":f.dst_ip,"_src_port":f.src_port,
             "_dst_port":f.dst_port,"_protocol":f.protocol,"_timestamp":f.last_seen,
+            "_hexdump":f.hexdump,
         }
         return feat
 

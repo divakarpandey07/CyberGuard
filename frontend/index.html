@@ -145,6 +145,8 @@ header h1 span{color:var(--accent)}
 .notif.HIGH{border-color:var(--orange)}
 .notif.MEDIUM{border-color:var(--yellow)}
 @keyframes slideInRight{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+@keyframes flowDash{to{stroke-dashoffset:-20}}
+.map-arc{animation:flowDash 1.5s linear infinite}
 </style>
 </head>
 <body>
@@ -158,6 +160,8 @@ header h1 span{color:var(--accent)}
   <div class="badge" id="interface-badge" style="display:none;border-color:var(--accent);color:var(--accent)">📡 Interface: —</div>
   <div class="badge" id="model-badge">Model: —</div>
   <div class="badge" id="honeypot-badge">🍯 Honeypot: —</div>
+  <div class="badge" id="cpu-badge" style="border-color:var(--yellow);color:var(--yellow)">💻 CPU: —</div>
+  <div class="badge" id="ram-badge" style="border-color:var(--blue);color:var(--blue)">🧠 RAM: —</div>
   <div class="ml-spacer"></div>
   <button class="btn btn-success" id="start-btn" onclick="snifferControl('start')">▶ Start Capture</button>
   <button class="btn btn-danger" id="stop-btn" onclick="snifferControl('stop')" style="display:none">■ Stop</button>
@@ -238,16 +242,27 @@ header h1 span{color:var(--accent)}
       <span class="toggle-lbl">Attacks only</span>
     </label>
     <button class="btn btn-ghost btn-sm" onclick="clearFeed()">🗑 Clear</button>
-    <span class="stat-sub" style="margin-left:auto">Showing last 200 events</span>
+    <span class="stat-sub" style="margin-left:auto">Showing last 200 events (Click row to inspect payload)</span>
   </div>
-  <div class="panel" style="height:600px;overflow-y:auto" id="live-feed-container">
-    <table class="tbl" style="width:100%">
-      <thead><tr>
-        <th>Time</th><th>Src IP</th><th>🌍</th><th>Dst IP:Port</th>
-        <th>Label</th><th>Severity</th><th>Confidence</th><th>AE Score</th><th>Action</th>
-      </tr></thead>
-      <tbody id="live-tbody"></tbody>
-    </table>
+  <div style="display:flex;gap:14px;align-items:flex-start;width:100%">
+    <div class="panel" style="flex:3;height:600px;overflow-y:auto" id="live-feed-container">
+      <table class="tbl" style="width:100%">
+        <thead><tr>
+          <th>Time</th><th>Src IP</th><th>🌍</th><th>Dst IP:Port</th>
+          <th>Label</th><th>Severity</th><th>Confidence</th><th>AE Score</th><th>Action</th>
+        </tr></thead>
+        <tbody id="live-tbody"></tbody>
+      </table>
+    </div>
+    <div class="panel" style="flex:1.4;height:600px;display:none;flex-direction:column;border-color:var(--border)" id="hexdump-container">
+      <div class="panel-header" style="display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)">
+        <span class="panel-title" style="font-size:12px;font-weight:600;color:var(--text)">🔬 Raw Packet Payload</span>
+        <button class="btn btn-ghost btn-sm" onclick="closeHexdump()" style="padding:2px 8px;margin-left:auto;font-size:11px">✕ Close</button>
+      </div>
+      <div class="panel-body" style="flex:1;overflow:auto;background:#090d13;color:#8892b0;font-family:monospace;font-size:10px;padding:12px;white-space:pre;line-height:1.45;letter-spacing:-0.2px" id="hexdump-body">
+        Select a row in the live feed to view raw packet bytes.
+      </div>
+    </div>
   </div>
 </div>
 
@@ -563,6 +578,11 @@ socket.on('model_info', meta => {
   document.getElementById('ae-status').style.color = meta.autoencoder_trained ? 'var(--green)' : 'var(--yellow)';
 });
 
+socket.on('system_stats', d => {
+  document.getElementById('cpu-badge').textContent = `💻 CPU: ${d.cpu.toFixed(0)}%`;
+  document.getElementById('ram-badge').textContent = `🧠 RAM: ${d.ram.toFixed(0)}%`;
+});
+
 socket.on('stats_update', s => {
   document.getElementById('s-total').textContent = s.total||0;
   const attacks = Object.entries(s.by_type||{})
@@ -658,6 +678,24 @@ function updateAttackTypes(byType) {
 }
 
 // ── GeoIP Map ─────────────────────────────────────────────────────────────
+function getBezierPoints(p1, p2, numPoints = 20) {
+  const points = [];
+  const midLat = (p1[0] + p2[0]) / 2;
+  const midLon = (p1[1] + p2[1]) / 2;
+  const dLat = p2[0] - p1[0];
+  const dLon = p2[1] - p1[1];
+  const offsetLat = -dLon * 0.18;
+  const offsetLon = dLat * 0.18;
+  const cp = [midLat + offsetLat, midLon + offsetLon];
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    const lat = (1 - t) * (1 - t) * p1[0] + 2 * (1 - t) * t * cp[0] + t * t * p2[0];
+    const lon = (1 - t) * (1 - t) * p1[1] + 2 * (1 - t) * t * cp[1] + t * t * p2[1];
+    points.push([lat, lon]);
+  }
+  return points;
+}
+
 function initMap() {
   geoMap = L.map('geomap',{zoomControl:true,attributionControl:false}).setView([20,0],2);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
@@ -684,8 +722,33 @@ function updateMap(ev) {
       <b>ISP:</b> ${g.isp||'—'}
     </div>`);
   geoLayer.addLayer(marker);
+
+  // Draw arc curve to server target location
+  let toLatLng = [20, 0]; // default fallback center
+  if (ev.target_geo && ev.target_geo.lat && ev.target_geo.lon) {
+    toLatLng = [ev.target_geo.lat, ev.target_geo.lon];
+  }
+  const fromLatLng = [g.lat, g.lon];
+  
+  // Calculate and draw line if not identical
+  if (Math.abs(fromLatLng[0]-toLatLng[0]) > 0.1 || Math.abs(fromLatLng[1]-toLatLng[1]) > 0.1) {
+    const points = getBezierPoints(fromLatLng, toLatLng);
+    const line = L.polyline(points, {
+      color: color,
+      weight: 2,
+      opacity: 0.8,
+      dashArray: '6, 6',
+      className: 'map-arc',
+    }).addTo(geoLayer);
+    
+    // Auto-remove line after 5 seconds to prevent memory build-up and clutter
+    setTimeout(() => {
+      line.remove();
+    }, 5000);
+  }
+
   // Remove old markers if too many
-  if (geoLayer.getLayers().length > 200) {
+  if (geoLayer.getLayers().length > 300) {
     geoLayer.getLayers()[0].remove();
   }
 }
@@ -715,6 +778,11 @@ function addFeedRow(ev) {
 
   const row = document.createElement('tr');
   row.style.animation = 'slideIn .3s';
+  row.style.cursor = 'pointer';
+  row.dataset.hexdump = ev.hexdump || 'No raw payload captured for this flow.';
+  row.onclick = () => {
+    showHexdump(row.dataset.hexdump, ev.src_ip, ev.dst_ip, ev.dst_port, ev.label);
+  };
   row.innerHTML = `
     <td style="font-family:monospace;color:var(--text2);font-size:11px">${ev.timestamp}</td>
     <td class="feed-ip">${ev.src_ip} ${threat}</td>
@@ -740,6 +808,18 @@ function addFeedRow(ev) {
 function clearFeed() {
   document.getElementById('live-tbody').innerHTML = '';
   feedRows = [];
+  closeHexdump();
+}
+
+function showHexdump(hd, src, dst, port, label) {
+  document.getElementById('hexdump-container').style.display = 'flex';
+  const headerText = `🔬 Raw Packet: ${src} → ${dst}:${port} (${label})`;
+  document.querySelector('#hexdump-container .panel-title').textContent = headerText;
+  document.getElementById('hexdump-body').textContent = hd;
+}
+
+function closeHexdump() {
+  document.getElementById('hexdump-container').style.display = 'none';
 }
 
 // ── Notifications ────────────────────────────────────────────────────────
