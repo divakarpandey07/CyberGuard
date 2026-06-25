@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CyberGuard IDS v3</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Leaflet for GeoIP Map -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --bg:#0a0e1a;--panel:#111827;--panel2:#1a2235;--border:#1e2d45;
+  --text:#e2e8f0;--text2:#94a3b8;--accent:#3b82f6;--green:#10b981;
+  --red:#ef4444;--orange:#f97316;--yellow:#f59e0b;--purple:#8b5cf6;
+  --cyan:#06b6d4;--pink:#ec4899;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--panel)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* Header */
+header{background:var(--panel);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
+header h1{font-size:18px;font-weight:700;letter-spacing:.5px}
+header h1 span{color:var(--accent)}
+.badge{background:var(--panel2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:11px;color:var(--text2)}
+.badge.online{border-color:var(--green);color:var(--green)}
+.ml-spacer{flex:1}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;background:var(--panel);border-bottom:1px solid var(--border);padding:0 20px;overflow-x:auto}
+.tab-btn{padding:10px 18px;border:none;background:none;color:var(--text2);cursor:pointer;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+.tab-btn.active{color:var(--accent);border-color:var(--accent)}
+.tab-btn:hover:not(.active){color:var(--text)}
+.tab-content{display:none;padding:16px 20px;animation:fadeIn .2s}
+.tab-content.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* Grid */
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:900px){.g4,.g3,.g2{grid-template-columns:1fr}}
+
+/* Stat cards */
+.stat-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.stat-card.green::before{background:var(--green)}
+.stat-card.red::before{background:var(--red)}
+.stat-card.yellow::before{background:var(--yellow)}
+.stat-card.blue::before{background:var(--accent)}
+.stat-card.purple::before{background:var(--purple)}
+.stat-card.cyan::before{background:var(--cyan)}
+.stat-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px}
+.stat-val{font-size:28px;font-weight:700;margin:6px 0}
+.stat-sub{font-size:11px;color:var(--text2)}
+
+/* Panel */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.panel-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-weight:600;font-size:13px}
+.panel-body{padding:16px}
+
+/* Table */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{background:var(--panel2);padding:8px 12px;text-align:left;color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+.tbl td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl tr:hover td{background:var(--panel2)}
+.tbl tr:last-child td{border:none}
+
+/* Severity badges */
+.sev{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.sev.CRITICAL{background:#7f1d1d;color:#fca5a5}
+.sev.HIGH{background:#431407;color:#fdba74}
+.sev.MEDIUM{background:#451a03;color:#fde68a}
+.sev.LOW{background:#064e3b;color:#6ee7b7}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:#2563eb}
+.btn-danger{background:#dc2626;color:#fff}
+.btn-danger:hover{background:#b91c1c}
+.btn-success{background:var(--green);color:#fff}
+.btn-success:hover{background:#059669}
+.btn-ghost{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn-sm{padding:4px 10px;font-size:11px}
+
+/* Control bar */
+.ctrl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+
+/* Map */
+#geomap{height:380px;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+
+/* Gauge bar */
+.gauge-wrap{margin-bottom:10px}
+.gauge-label{display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:4px}
+.gauge-bar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden}
+.gauge-fill{height:100%;border-radius:99px;transition:width .5s}
+
+/* Live feed */
+.feed-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;animation:slideIn .3s}
+@keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.feed-row:last-child{border:none}
+.feed-ip{font-family:monospace;color:var(--cyan);font-size:11px}
+.feed-flag{font-size:14px}
+
+/* Honeypot hit */
+.hp-hit{background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.2);border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;animation:slideIn .3s}
+.hp-hit .service{color:var(--yellow);font-weight:600}
+
+/* Threat score bar */
+.threat-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--green),var(--yellow),var(--red));position:relative}
+.threat-marker{position:absolute;top:-3px;width:2px;height:18px;background:#fff;border-radius:2px}
+
+/* Toggle */
+.toggle{display:flex;align-items:center;gap:8px;cursor:pointer}
+.toggle input{display:none}
+.toggle-track{width:38px;height:20px;background:var(--panel2);border-radius:99px;position:relative;transition:.2s;border:1px solid var(--border)}
+.toggle input:checked+.toggle-track{background:var(--accent);border-color:var(--accent)}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked~.toggle-thumb{left:20px}
+.toggle-lbl{font-size:12px;color:var(--text2)}
+
+/* Alert dot */
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot.green{background:var(--green)}
+.dot.red{background:var(--red)}
+.dot.yellow{background:var(--yellow)}
+
+/* Chip */
+.chip{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.chip.normal{background:#064e3b22;color:var(--green);border:1px solid var(--green)33}
+.chip.attack{background:#7f1d1d22;color:var(--red);border:1px solid var(--red)33}
+
+/* Notification */
+#notif-container{position:fixed;top:70px;right:16px;z-index:999;display:flex;flex-direction:column;gap:8px;max-width:340px}
+.notif{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-size:12px;box-shadow:0 8px 32px #000a;animation:slideInRight .3s;border-left:4px solid var(--accent)}
+.notif.CRITICAL{border-color:var(--red)}
+.notif.HIGH{border-color:var(--orange)}
+.notif.MEDIUM{border-color:var(--yellow)}
+@keyframes slideInRight{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+
+<div id="notif-container"></div>
+
+<header>
+  <span style="font-size:22px">🛡️</span>
+  <h1>Cyber<span>Guard</span> IDS <span style="font-size:12px;color:var(--text2)">v3</span></h1>
+  <div class="badge online" id="status-badge">● CONNECTING</div>
+  <div class="badge" id="interface-badge" style="display:none;border-color:var(--accent);color:var(--accent)">📡 Interface: —</div>
+  <div class="badge" id="model-badge">Model: —</div>
+  <div class="badge" id="honeypot-badge">🍯 Honeypot: —</div>
+  <div class="ml-spacer"></div>
+  <button class="btn btn-success" id="start-btn" onclick="snifferControl('start')">▶ Start Capture</button>
+  <button class="btn btn-danger" id="stop-btn" onclick="snifferControl('stop')" style="display:none">■ Stop</button>
+  <button class="btn btn-ghost btn-sm" onclick="exportCsv()">⬇ Export CSV</button>
+  <button class="btn btn-ghost btn-sm" onclick="exportPcap()">📦 Export PCAP</button>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="showTab('overview')">📊 Overview</button>
+  <button class="tab-btn" onclick="showTab('live')">🔴 Live Feed</button>
+  <button class="tab-btn" onclick="showTab('geomap')">🌍 GeoIP Map</button>
+  <button class="tab-btn" onclick="showTab('honeypot')">🍯 Honeypot</button>
+  <button class="tab-btn" onclick="showTab('behavior')">🧠 Behavior</button>
+  <button class="tab-btn" onclick="showTab('dns')">🌐 DNS</button>
+  <button class="tab-btn" onclick="showTab('blocked')">🔒 Blocked IPs</button>
+  <button class="tab-btn" onclick="showTab('logs')">📋 Logs</button>
+  <button class="tab-btn" onclick="showTab('settings')">⚙️ Settings</button>
+</div>
+
+<!-- OVERVIEW TAB -->
+<div id="tab-overview" class="tab-content active">
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="stat-card green"><div class="stat-label">Total Flows</div><div class="stat-val" id="s-total">0</div><div class="stat-sub">Since startup</div></div>
+    <div class="stat-card red"><div class="stat-label">Attacks Detected</div><div class="stat-val" id="s-attacks">0</div><div class="stat-sub">All types combined</div></div>
+    <div class="stat-card yellow"><div class="stat-label">IPs Blocked</div><div class="stat-val" id="s-blocked">0</div><div class="stat-sub">Firewall rules active</div></div>
+    <div class="stat-card blue"><div class="stat-label">Honeypot Hits</div><div class="stat-val" id="s-honeypot">0</div><div class="stat-sub">Probes intercepted</div></div>
+  </div>
+  <div class="grid g2">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">📈 Attack Distribution</span></div>
+      <div class="panel-body"><canvas id="attack-chart" height="200"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🔄 Traffic Timeline</span></div>
+      <div class="panel-body"><canvas id="timeline-chart" height="200"></canvas></div>
+    </div>
+  </div>
+  <div style="margin-top:14px" class="grid g3">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🤖 ML Model</span></div>
+      <div class="panel-body" id="model-info-panel">
+        <div style="color:var(--text2);font-size:12px">Waiting for model info...</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">⚡ Attack Types Seen</span></div>
+      <div class="panel-body" id="attack-types-panel"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🧠 Zero-Day Detector</span></div>
+      <div class="panel-body">
+        <div class="gauge-wrap">
+          <div class="gauge-label"><span>Autoencoder Status</span><span id="ae-status">Loading...</span></div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:8px">
+          Trained on normal traffic only. High reconstruction error → Zero-Day alert.
+        </div>
+        <div style="margin-top:12px;font-size:12px">
+          <div>🌐 DNS Attacks: <span id="dns-count" style="color:var(--cyan)">0</span></div>
+          <div style="margin-top:4px">🍯 Honeypot Hits: <span id="hp-count2" style="color:var(--yellow)">0</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE FEED TAB -->
+<div id="tab-live" class="tab-content">
+  <div class="ctrl-bar">
+    <label class="toggle">
+      <input type="checkbox" id="auto-scroll" checked>
+      <div class="toggle-track"><div class="toggle-thumb"></div></div>
+      <span class="toggle-lbl">Auto-scroll</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" id="attacks-only">
+      <div class="toggle-track"><div class="toggle-thumb"></div></div>
+      <span class="toggle-lbl">Attacks only</span>
+    </label>
+    <button class="btn btn-ghost btn-sm" onclick="clearFeed()">🗑 Clear</button>
+    <span class="stat-sub" style="margin-left:auto">Showing last 200 events</span>
+  </div>
+  <div class="panel" style="height:600px;overflow-y:auto" id="live-feed-container">
+    <table class="tbl" style="width:100%">
+      <thead><tr>
+        <th>Time</th><th>Src IP</th><th>🌍</th><th>Dst IP:Port</th>
+        <th>Label</th><th>Severity</th><th>Confidence</th><th>AE Score</th><th>Action</th>
+      </tr></thead>
+      <tbody id="live-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- GEOIP MAP TAB -->
+<div id="tab-geomap" class="tab-content">
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🌍 Live Attack Origins</span><span class="stat-sub">ip-api.com — Free, No API key</span></div>
+      <div class="panel-body" style="padding:8px">
+        <div id="geomap"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🏴 Top Attack Countries</span></div>
+      <div class="panel-body" id="country-list">
+        <div style="color:var(--text2);font-size:12px">No geo data yet. Start capture and attacks will appear here.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HONEYPOT TAB -->
+<div id="tab-honeypot" class="tab-content">
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="stat-card yellow">
+      <div class="stat-label">Total Hits</div>
+      <div class="stat-val" id="hp-total">0</div>
+      <div class="stat-sub">Probes intercepted</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Unique Attackers</div>
+      <div class="stat-val" id="hp-unique">0</div>
+      <div class="stat-sub">Distinct source IPs</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Active Ports</div>
+      <div class="stat-val" id="hp-ports">0</div>
+      <div class="stat-sub">Fake service ports</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Most Targeted</div>
+      <div class="stat-val" id="hp-top-svc" style="font-size:16px">—</div>
+      <div class="stat-sub">Service type</div>
+    </div>
+  </div>
+  <div class="grid g2">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🍯 Live Honeypot Feed</span></div>
+      <div class="panel-body" id="hp-feed" style="max-height:400px;overflow-y:auto">
+        <div style="color:var(--text2);font-size:12px">Waiting for honeypot probes...</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">📊 Hits by Service</span></div>
+      <div class="panel-body" id="hp-by-port"></div>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-header"><span class="panel-title">🎯 Top Attacker IPs</span></div>
+    <div class="panel-body">
+      <table class="tbl">
+        <thead><tr><th>IP Address</th><th>Hits</th><th>Action</th></tr></thead>
+        <tbody id="hp-top-ips"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- BEHAVIOR TAB -->
+<div id="tab-behavior" class="tab-content">
+  <div class="ctrl-bar">
+    <button class="btn btn-ghost btn-sm" onclick="loadBehavior()">🔄 Refresh</button>
+    <span class="stat-sub" style="margin-left:auto">Updated every 30 seconds. Tracks per-IP threat score.</span>
+  </div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="stat-card red"><div class="stat-label">Critical IPs</div><div class="stat-val" id="beh-crit">0</div></div>
+    <div class="stat-card orange" style="--accent:var(--orange)"><div class="stat-label">High Risk</div><div class="stat-val" id="beh-high">0</div></div>
+    <div class="stat-card yellow"><div class="stat-label">Medium Risk</div><div class="stat-val" id="beh-med">0</div></div>
+    <div class="stat-card green"><div class="stat-label">IPs Tracked</div><div class="stat-val" id="beh-total">0</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">🔥 Top Threat IPs</span></div>
+    <div class="panel-body">
+      <table class="tbl">
+        <thead><tr><th>IP Address</th><th>Threat Score</th><th>Risk</th><th>Attacks</th><th>Ports</th><th>Labels Seen</th><th>Last Seen</th></tr></thead>
+        <tbody id="beh-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- DNS TAB -->
+<div id="tab-dns" class="tab-content">
+  <div class="grid g3" style="margin-bottom:14px">
+    <div class="stat-card cyan"><div class="stat-label">Total DNS Queries</div><div class="stat-val" id="dns-total">0</div></div>
+    <div class="stat-card red"><div class="stat-label">DNS Attacks</div><div class="stat-val" id="dns-attacks">0</div></div>
+    <div class="stat-card yellow"><div class="stat-label">IPs Monitored</div><div class="stat-val" id="dns-ips">0</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">🌐 DNS Attack Events</span>
+      <span class="stat-sub">Tunneling • DGA Domains • DNS Flood</span>
+    </div>
+    <div class="panel-body">
+      <table class="tbl">
+        <thead><tr><th>Time</th><th>Source IP</th><th>Attack Type</th><th>Query</th><th>Reason</th><th>Severity</th></tr></thead>
+        <tbody id="dns-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- BLOCKED IPS TAB -->
+<div id="tab-blocked" class="tab-content">
+  <div class="ctrl-bar">
+    <input type="text" id="block-ip-input" placeholder="Enter IP to block..." style="background:var(--panel);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:6px;font-size:12px;width:200px">
+    <button class="btn btn-danger btn-sm" onclick="manualBlock()">🔒 Block IP</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadBlocked()">🔄 Refresh</button>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">🔒 Currently Blocked IPs</span></div>
+    <div class="panel-body">
+      <table class="tbl">
+        <thead><tr><th>IP Address</th><th>Blocked At</th><th>Remaining</th><th>Action</th></tr></thead>
+        <tbody id="blocked-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- LOGS TAB -->
+<div id="tab-logs" class="tab-content">
+  <div class="ctrl-bar">
+    <select id="log-filter" style="background:var(--panel);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:12px">
+      <option value="">All Types</option>
+      <option value="Normal">Normal</option>
+      <option value="DoS/DDoS">DoS/DDoS</option>
+      <option value="PortScan">PortScan</option>
+      <option value="Infiltration">Infiltration</option>
+      <option value="Anomaly">Anomaly</option>
+      <option value="Zero-Day">Zero-Day</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="loadLogs()">🔄 Refresh</button>
+    <button class="btn btn-ghost btn-sm" onclick="exportCsv()">⬇ Export CSV</button>
+  </div>
+  <div class="panel">
+    <div class="panel-body" style="padding:0">
+      <table class="tbl">
+        <thead><tr><th>Time</th><th>Src IP</th><th>Dst</th><th>Label</th><th>Severity</th><th>Confidence</th><th>Recommendation</th></tr></thead>
+        <tbody id="logs-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS TAB -->
+<div id="tab-settings" class="tab-content">
+  <div class="grid g2">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">📡 Telegram Alerts</span><span class="badge">FREE</span></div>
+      <div class="panel-body" style="font-size:12px">
+        <div style="color:var(--text2);line-height:1.8;margin-bottom:12px">
+          <b>Setup (2 minutes):</b><br>
+          1. Open Telegram → search <b>@BotFather</b><br>
+          2. Send <code style="background:var(--panel2);padding:1px 4px;border-radius:3px">/newbot</code> → follow steps → copy <b>token</b><br>
+          3. Send any message to your bot<br>
+          4. Visit <code style="background:var(--panel2);padding:1px 4px;border-radius:3px">api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code><br>
+          5. Copy <b>chat_id</b> from response<br>
+          6. In <b>config.py</b>: set <code>TELEGRAM_ENABLED=True</code>, paste token & chat_id
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="testTelegram()">🧪 Test Telegram</button>
+        <span id="tg-result" style="margin-left:8px;font-size:11px"></span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">📧 Email Alerts</span><span class="badge">FREE</span></div>
+      <div class="panel-body" style="font-size:12px">
+        <div style="color:var(--text2);line-height:1.8;margin-bottom:12px">
+          <b>Gmail Setup:</b><br>
+          1. Google Account → Security → 2-Step Verification → <b>App Passwords</b><br>
+          2. Generate password for "Mail" → copy 16-char code<br>
+          3. In <b>config.py</b>: set <code>EMAIL_ENABLED=True</code><br>
+          4. Set <code>EMAIL_SENDER</code>, <code>EMAIL_PASSWORD</code>, <code>EMAIL_RECIPIENT</code>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="testEmail()">🧪 Test Email</button>
+        <span id="em-result" style="margin-left:8px;font-size:11px"></span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🔒 Threat Intelligence</span><span class="badge">FREE tier</span></div>
+      <div class="panel-body" style="font-size:12px;color:var(--text2);line-height:1.8">
+        <b>AbuseIPDB Setup (optional):</b><br>
+        1. Register free at <b>abuseipdb.com</b><br>
+        2. Go to Account → API → Create Key<br>
+        3. Free tier: <b>1000 checks/day</b><br>
+        4. In config.py: set <code>ABUSEIPDB_API_KEY="your-key"</code><br><br>
+        <span style="color:var(--green)">✅ Works without key (just skips IP reputation)</span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🌱 Online Learning</span><span class="badge">Optional</span></div>
+      <div class="panel-body" style="font-size:12px;color:var(--text2);line-height:1.8">
+        <b>Enable incremental model updates:</b><br>
+        <code style="background:var(--panel2);padding:2px 6px;border-radius:3px;display:block;margin:6px 0">pip install river</code>
+        Then in config.py: set <code>ONLINE_LEARNING_ENABLED=True</code><br><br>
+        Uses Hoeffding Adaptive Tree — learns from every live flow without full retraining.
+        <div id="online-stats" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🔊 Audio Notifications</span><span class="badge">Local</span></div>
+      <div class="panel-body" style="font-size:12px;color:var(--text2);line-height:1.8">
+        <b>Play alarm sounds:</b><br>
+        Synthesizes notification chimes when high/critical attacks are detected.
+        <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between">
+          <span>Enable alert audio</span>
+          <label class="toggle">
+            <input type="checkbox" id="audio-toggle" onchange="toggleAudio(this.checked)">
+            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────
+const socket = io();
+let feedRows = [];
+let attackChart, timelineChart, geoMap, geoLayer;
+let countryCounts = {};
+let timelineData = {labels:[], normal:[], attack:[]};
+const MAX_FEED = 200;
+let soundEnabled = false;
+
+function toggleAudio(enabled) {
+  soundEnabled = enabled;
+  localStorage.setItem('cyberguard_sound', enabled ? 'true' : 'false');
+  if (enabled) {
+    playAlertSound('NORMAL');
+  }
+}
+
+function playAlertSound(severity) {
+  if (!soundEnabled) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const playTone = (freq, startTime, duration, type = 'sine') => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0.15, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+    if (severity === 'CRITICAL') {
+      playTone(880, ctx.currentTime, 0.15, 'triangle');
+      playTone(587.33, ctx.currentTime + 0.15, 0.3, 'triangle');
+    } else if (severity === 'HIGH') {
+      playTone(660, ctx.currentTime, 0.1, 'sine');
+      playTone(880, ctx.currentTime + 0.1, 0.25, 'sine');
+    } else {
+      playTone(523.25, ctx.currentTime, 0.15, 'sine');
+    }
+  } catch (e) {
+    console.log("Audio error:", e);
+  }
+}
+
+// ── Socket events ────────────────────────────────────────────────────────
+socket.on('connect', () => {
+  document.getElementById('status-badge').textContent = '● CONNECTED';
+  document.getElementById('status-badge').style.color = 'var(--green)';
+  loadBlocked(); loadBehavior(); loadDns();
+});
+
+socket.on('disconnect', () => {
+  document.getElementById('status-badge').textContent = '● OFFLINE';
+  document.getElementById('status-badge').style.color = 'var(--red)';
+});
+
+socket.on('sniffer_status', d => {
+  const on = d.active;
+  document.getElementById('start-btn').style.display = on ? 'none' : '';
+  document.getElementById('stop-btn').style.display  = on ? '' : 'none';
+  const ifaceBadge = document.getElementById('interface-badge');
+  if (on && d.interface) {
+    ifaceBadge.textContent = `📡 Active: ${d.interface}${d.ip ? ` (${d.ip})` : ''}`;
+    ifaceBadge.style.display = '';
+  } else {
+    ifaceBadge.style.display = 'none';
+  }
+});
+
+socket.on('model_info', meta => {
+  document.getElementById('model-badge').textContent =
+    `🤖 ${meta.model_type||"XGBoost"}: ${((meta.test_accuracy||meta.cv_accuracy_mean||0)*100).toFixed(1)}% acc`;
+  document.getElementById('model-info-panel').innerHTML = `
+    <div style="font-size:12px;line-height:1.9;color:var(--text2)">
+      <div>📦 Dataset: <span style="color:var(--text)">${meta.dataset||'CICIDS2017'}</span></div>
+      <div>🎯 CV Accuracy: <span style="color:var(--green)">${(meta.cv_accuracy_mean*100).toFixed(2)}%</span></div>
+      <div>📊 CV F1 Score: <span style="color:var(--accent)">${(meta.cv_f1_mean*100).toFixed(2)}%</span></div>
+      <div>📁 Samples: <span style="color:var(--text)">${(meta.n_samples||0).toLocaleString()}</span></div>
+      <div>🕐 Trained: <span style="color:var(--text)">${meta.trained_at||'—'}</span></div>
+      <div>🧠 Autoencoder: <span style="color:${meta.autoencoder_trained?'var(--green)':'var(--yellow)'}">${meta.autoencoder_trained?'✅ Active':'⚠️ Not trained'}</span></div>
+    </div>`;
+  document.getElementById('ae-status').textContent = meta.autoencoder_trained ? '✅ Active' : '⚠️ Run train.py';
+  document.getElementById('ae-status').style.color = meta.autoencoder_trained ? 'var(--green)' : 'var(--yellow)';
+});
+
+socket.on('stats_update', s => {
+  document.getElementById('s-total').textContent = s.total||0;
+  const attacks = Object.entries(s.by_type||{})
+    .filter(([k])=>k!=='Normal').reduce((a,[,v])=>a+v,0);
+  document.getElementById('s-attacks').textContent = attacks;
+  updateAttackTypes(s.by_type||{});
+});
+
+socket.on('detection_event', ev => {
+  addFeedRow(ev);
+  updateTimeline(ev);
+  updateCountries(ev);
+  updateMap(ev);
+  if (ev.is_attack) {
+    showNotif(ev);
+    playAlertSound(ev.severity);
+  }
+});
+
+socket.on('honeypot_hit', ev => {
+  updateHoneypotFeed(ev);
+  document.getElementById('s-honeypot').textContent =
+    parseInt(document.getElementById('s-honeypot').textContent||0)+1;
+  document.getElementById('hp-count2').textContent =
+    parseInt(document.getElementById('hp-count2').textContent||0)+1;
+  playAlertSound('CRITICAL');
+});
+
+socket.on('dns_event', ev => {
+  addDnsRow(ev);
+  document.getElementById('dns-count').textContent =
+    parseInt(document.getElementById('dns-count').textContent||0)+1;
+  playAlertSound(ev.severity || 'MEDIUM');
+});
+
+// ── Charts ────────────────────────────────────────────────────────────────
+function initCharts() {
+  const darkGrid = {grid:{color:'#1e2d4544'},ticks:{color:'#94a3b8'},border:{color:'#1e2d45'}};
+  attackChart = new Chart(document.getElementById('attack-chart'),{
+    type:'doughnut',
+    data:{labels:['Normal','DoS/DDoS','PortScan','Infiltration','Anomaly','Zero-Day','DNS Attack'],
+          datasets:[{data:[0,0,0,0,0,0,0],
+            backgroundColor:['#10b981','#ef4444','#f59e0b','#8b5cf6','#6b7280','#dc2626','#0ea5e9'],
+            borderWidth:0,hoverOffset:4}]},
+    options:{plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},cutout:'65%'}
+  });
+  timelineChart = new Chart(document.getElementById('timeline-chart'),{
+    type:'line',
+    data:{labels:[],datasets:[
+      {label:'Normal',data:[],borderColor:'#10b981',backgroundColor:'#10b98122',fill:true,tension:.4,pointRadius:0},
+      {label:'Attack',data:[],borderColor:'#ef4444',backgroundColor:'#ef444422',fill:true,tension:.4,pointRadius:0}
+    ]},
+    options:{plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
+             scales:{x:{...darkGrid},y:{...darkGrid,beginAtZero:true}},
+             animation:{duration:300}}
+  });
+}
+
+function updateTimeline(ev) {
+  const t = ev.timestamp;
+  if (timelineData.labels.length === 0 || timelineData.labels[timelineData.labels.length-1] !== t) {
+    if (timelineData.labels.length >= 30) {
+      timelineData.labels.shift(); timelineData.normal.shift(); timelineData.attack.shift();
+    }
+    timelineData.labels.push(t);
+    timelineData.normal.push(0); timelineData.attack.push(0);
+  }
+  const i = timelineData.labels.length-1;
+  if (ev.is_attack) timelineData.attack[i]++;
+  else timelineData.normal[i]++;
+  timelineChart.data.labels = timelineData.labels;
+  timelineChart.data.datasets[0].data = timelineData.normal;
+  timelineChart.data.datasets[1].data = timelineData.attack;
+  timelineChart.update('none');
+}
+
+function updateAttackTypes(byType) {
+  const labels = Object.keys(byType);
+  const data   = Object.values(byType);
+  attackChart.data.labels   = labels;
+  attackChart.data.datasets[0].data = data;
+  attackChart.update('none');
+  const colors = {'Normal':'#10b981','DoS/DDoS':'#ef4444','PortScan':'#f59e0b',
+                  'Infiltration':'#8b5cf6','Anomaly':'#6b7280','Zero-Day':'#dc2626','DNS Attack':'#0ea5e9'};
+  attackChart.data.datasets[0].backgroundColor = labels.map(l=>colors[l]||'#64748b');
+  // Update types panel
+  const total = data.reduce((a,b)=>a+b,0)||1;
+  document.getElementById('attack-types-panel').innerHTML = labels.map((l,i)=>`
+    <div class="gauge-wrap">
+      <div class="gauge-label"><span>${l}</span><span>${data[i]}</span></div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${data[i]/total*100}%;background:${colors[l]||'#64748b'}"></div></div>
+    </div>`).join('');
+}
+
+// ── GeoIP Map ─────────────────────────────────────────────────────────────
+function initMap() {
+  geoMap = L.map('geomap',{zoomControl:true,attributionControl:false}).setView([20,0],2);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    maxZoom:18
+  }).addTo(geoMap);
+  geoLayer = L.layerGroup().addTo(geoMap);
+}
+
+function updateMap(ev) {
+  if (!geoMap || !ev.geo) return;
+  const g = ev.geo;
+  if (!g.lat && !g.lon) return;
+  if (g.is_private || g.country_code === 'XX') return;
+  const color = ev.is_attack ? '#ef4444' : '#10b981';
+  const marker = L.circleMarker([g.lat, g.lon],{
+    radius:6, color:color, fillColor:color, fillOpacity:.8, weight:1
+  });
+  marker.bindPopup(`
+    <div style="font-size:12px;min-width:160px">
+      <b>${g.flag?`<img src="${g.flag}" style="margin-right:4px">`:''}${g.country}</b><br>
+      ${g.city||''}${g.city?', ':''}<br>
+      <b>IP:</b> ${ev.src_ip}<br>
+      <b>Label:</b> <span style="color:${ev.is_attack?'#ef4444':'#10b981'}">${ev.label}</span><br>
+      <b>ISP:</b> ${g.isp||'—'}
+    </div>`);
+  geoLayer.addLayer(marker);
+  // Remove old markers if too many
+  if (geoLayer.getLayers().length > 200) {
+    geoLayer.getLayers()[0].remove();
+  }
+}
+
+function updateCountries(ev) {
+  if (!ev.geo || !ev.is_attack) return;
+  const c = ev.geo.country;
+  if (!c || c === 'Unknown') return;
+  countryCounts[c] = (countryCounts[c]||0)+1;
+  const sorted = Object.entries(countryCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const max = sorted[0]?.[1]||1;
+  document.getElementById('country-list').innerHTML = sorted.map(([country,cnt])=>`
+    <div class="gauge-wrap">
+      <div class="gauge-label"><span>${country}</span><span style="color:var(--red)">${cnt} attacks</span></div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${cnt/max*100}%;background:var(--red)"></div></div>
+    </div>`).join('');
+}
+
+// ── Live Feed ─────────────────────────────────────────────────────────────
+function addFeedRow(ev) {
+  const attacksOnly = document.getElementById('attacks-only').checked;
+  if (attacksOnly && !ev.is_attack) return;
+
+  const flag = ev.geo?.flag ? `<img src="${ev.geo.flag}" width="16" title="${ev.geo.country}">` : '🌐';
+  const threat = ev.threat?.is_known_bad ? '⚠️' : '';
+  const blocked = ev.auto_blocked ? '🔒' : '';
+
+  const row = document.createElement('tr');
+  row.style.animation = 'slideIn .3s';
+  row.innerHTML = `
+    <td style="font-family:monospace;color:var(--text2);font-size:11px">${ev.timestamp}</td>
+    <td class="feed-ip">${ev.src_ip} ${threat}</td>
+    <td>${flag}</td>
+    <td style="font-family:monospace;font-size:11px">${ev.dst_ip}:${ev.dst_port}</td>
+    <td><span class="chip ${ev.is_attack?'attack':'normal'}">${ev.severity_icon} ${ev.label}</span></td>
+    <td><span class="sev ${ev.severity}">${ev.severity}</span></td>
+    <td style="color:${ev.confidence>0.8?'var(--green)':'var(--yellow)'}">${(ev.confidence*100).toFixed(1)}%</td>
+    <td style="color:${(ev.ae_score||0)>0.7?'var(--red)':'var(--text2)'}">${((ev.ae_score||0)*100).toFixed(0)}%</td>
+    <td>${blocked}</td>`;
+
+  const tbody = document.getElementById('live-tbody');
+  tbody.insertBefore(row, tbody.firstChild);
+  feedRows.push(row);
+  if (feedRows.length > MAX_FEED) {
+    feedRows[0].remove(); feedRows.shift();
+  }
+  if (document.getElementById('auto-scroll').checked) {
+    document.getElementById('live-feed-container').scrollTop = 0;
+  }
+}
+
+function clearFeed() {
+  document.getElementById('live-tbody').innerHTML = '';
+  feedRows = [];
+}
+
+// ── Notifications ────────────────────────────────────────────────────────
+function showNotif(ev) {
+  if (!['CRITICAL','HIGH'].includes(ev.severity)) return;
+  const d = document.createElement('div');
+  d.className = `notif ${ev.severity}`;
+  d.innerHTML = `<b>${ev.severity_icon} ${ev.label}</b> <span style="color:var(--text2);float:right;font-size:10px">${ev.timestamp}</span><br>
+    <span style="color:var(--text2)">${ev.src_ip} → ${ev.dst_ip}:${ev.dst_port}</span><br>
+    <span style="font-size:11px;color:var(--text2)">${ev.recommendation}</span>`;
+  const c = document.getElementById('notif-container');
+  c.appendChild(d);
+  setTimeout(()=>d.remove(),6000);
+}
+
+// ── Honeypot ──────────────────────────────────────────────────────────────
+function updateHoneypotFeed(ev) {
+  const feed = document.getElementById('hp-feed');
+  const div = document.createElement('div');
+  div.className = 'hp-hit';
+  div.innerHTML = `<span class="service">🍯 ${ev.service}</span> | ${ev.src_ip} | <span style="color:var(--text2)">${ev.timestamp_fmt||''}</span>${ev.data?`<br><small style="color:var(--text2)">${ev.data.substring(0,100)}</small>`:''}`;
+  if (feed.firstChild && feed.firstChild.textContent && feed.firstChild.textContent.includes('Waiting'))
+    feed.innerHTML = '';
+  feed.insertBefore(div, feed.firstChild);
+  if (feed.children.length > 50) feed.lastChild.remove();
+}
+
+// ── DNS ───────────────────────────────────────────────────────────────────
+function addDnsRow(ev) {
+  const tbody = document.getElementById('dns-tbody');
+  const row = tbody.insertRow(0);
+  const sev = ev.severity||'MEDIUM';
+  row.innerHTML = `<td style="font-size:11px">${ev.timestamp}</td><td class="feed-ip">${ev.src_ip}</td>
+    <td style="color:var(--cyan)">${ev.attack_type}</td><td style="font-family:monospace;font-size:11px">${ev.query}</td>
+    <td style="color:var(--text2)">${ev.reason}</td><td><span class="sev ${sev}">${sev}</span></td>`;
+}
+
+// ── API calls ─────────────────────────────────────────────────────────────
+async function snifferControl(action) {
+  await fetch('/api/sniffer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
+}
+
+async function loadBlocked() {
+  const r = await fetch('/api/blocked'); const list = await r.json();
+  document.getElementById('s-blocked').textContent = list.length;
+  const tbody = document.getElementById('blocked-tbody');
+  tbody.innerHTML = list.length === 0
+    ? '<tr><td colspan="4" style="text-align:center;color:var(--text2)">No blocked IPs</td></tr>'
+    : list.map(b=>`<tr>
+        <td class="feed-ip">${b.ip}</td>
+        <td style="color:var(--text2)">${new Date(b.blocked_at*1000).toLocaleString()}</td>
+        <td style="color:var(--yellow)">${Math.ceil(b.remaining_sec/60)} min</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="unblock('${b.ip}')">🔓 Unblock</button></td>
+      </tr>`).join('');
+}
+
+async function manualBlock() {
+  const ip = document.getElementById('block-ip-input').value.trim();
+  if (!ip) return;
+  await fetch('/api/block',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip})});
+  document.getElementById('block-ip-input').value = '';
+  loadBlocked();
+}
+
+async function unblock(ip) {
+  await fetch('/api/unblock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip})});
+  loadBlocked();
+}
+
+async function loadLogs() {
+  const filter = document.getElementById('log-filter').value;
+  const r = await fetch('/api/logs?n=200'); let logs = await r.json();
+  if (filter) logs = logs.filter(l=>l.label===filter);
+  const tbody = document.getElementById('logs-tbody');
+  tbody.innerHTML = logs.map(l=>`<tr>
+    <td style="font-size:11px;color:var(--text2)">${l.timestamp}</td>
+    <td class="feed-ip">${l.src_ip}</td>
+    <td style="font-family:monospace;font-size:11px">${l.dst_ip}:${l.dst_port}</td>
+    <td><span class="chip ${l.label==='Normal'?'normal':'attack'}">${l.label}</span></td>
+    <td><span class="sev ${l.severity}">${l.severity}</span></td>
+    <td>${(l.confidence*100).toFixed(1)}%</td>
+    <td style="font-size:11px;color:var(--text2);max-width:200px">${l.recommendation}</td>
+  </tr>`).join('');
+}
+
+async function loadBehavior() {
+  const r = await fetch('/api/behavior'); const d = await r.json();
+  const rb = d.summary?.risk_breakdown||{};
+  document.getElementById('beh-crit').textContent = rb.CRITICAL||0;
+  document.getElementById('beh-high').textContent  = rb.HIGH||0;
+  document.getElementById('beh-med').textContent   = rb.MEDIUM||0;
+  document.getElementById('beh-total').textContent = d.summary?.total_ips_tracked||0;
+  const tbody = document.getElementById('beh-tbody');
+  tbody.innerHTML = (d.top_threats||[]).map(p=>{
+    const colors = {CRITICAL:'var(--red)',HIGH:'var(--orange)',MEDIUM:'var(--yellow)',LOW:'var(--green)'};
+    const barW = Math.min(p.threat_score,100);
+    return `<tr>
+      <td class="feed-ip">${p.ip}</td>
+      <td>
+        <div style="width:120px;height:8px;background:var(--panel2);border-radius:99px;overflow:hidden">
+          <div style="width:${barW}%;height:100%;background:${colors[p.risk_level]||'var(--text2)'}"></div>
+        </div>
+        <div style="font-size:10px;color:var(--text2)">${p.threat_score}/100</div>
+      </td>
+      <td><span class="sev ${p.risk_level==='CRITICAL'?'CRITICAL':p.risk_level==='HIGH'?'HIGH':p.risk_level==='MEDIUM'?'MEDIUM':'LOW'}">${p.risk_level}</span></td>
+      <td style="color:var(--red)">${p.attack_count}</td>
+      <td>${p.ports_count}</td>
+      <td style="font-size:11px;color:var(--text2)">${Object.entries(p.labels||{}).map(([k,v])=>`${k}:${v}`).join(', ')}</td>
+      <td style="font-size:11px;color:var(--text2)">${new Date(p.last_seen*1000).toLocaleTimeString()}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text2)">No profiles yet</td></tr>';
+}
+
+async function loadDns() {
+  const r = await fetch('/api/dns'); const d = await r.json();
+  document.getElementById('dns-total').textContent = d.stats?.total_dns_queries||0;
+  document.getElementById('dns-attacks').textContent = d.stats?.dns_attacks||0;
+  document.getElementById('dns-ips').textContent = d.stats?.tracked_ips||0;
+}
+
+async function loadHoneypot() {
+  const r = await fetch('/api/honeypot'); const d = await r.json();
+  const s = d.stats||{};
+  document.getElementById('hp-total').textContent = s.total_hits||0;
+  document.getElementById('hp-ports').textContent = (s.active_ports||[]).length;
+  document.getElementById('hp-unique').textContent = (s.top_ips||[]).length;
+  const byPort = s.by_port||{};
+  const topSvc = Object.entries(byPort).sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('hp-top-svc').textContent = topSvc?topSvc[0]:'—';
+  // Ports breakdown
+  const max = Math.max(...Object.values(byPort),1);
+  document.getElementById('hp-by-port').innerHTML = Object.entries(byPort).map(([svc,cnt])=>`
+    <div class="gauge-wrap">
+      <div class="gauge-label"><span>${svc}</span><span>${cnt}</span></div>
+      <div class="gauge-bar"><div class="gauge-fill" style="width:${cnt/max*100}%;background:var(--yellow)"></div></div>
+    </div>`).join('');
+  // Top IPs table
+  document.getElementById('hp-top-ips').innerHTML = (s.top_ips||[]).map(t=>`
+    <tr><td class="feed-ip">${t.ip}</td><td style="color:var(--yellow)">${t.count}</td>
+    <td><button class="btn btn-danger btn-sm" onclick="manualBlockIp('${t.ip}')">🔒 Block</button></td></tr>`
+  ).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text2)">No hits yet</td></tr>';
+  document.getElementById('hp-count2').textContent = s.total_hits||0;
+  document.getElementById('s-honeypot').textContent = s.total_hits||0;
+  // Badge
+  document.getElementById('honeypot-badge').textContent = `🍯 ${(s.active_ports||[]).length} ports`;
+}
+
+async function manualBlockIp(ip) {
+  await fetch('/api/block',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip})});
+  alert(`✅ Block request sent for ${ip}`);
+}
+
+async function testTelegram() {
+  document.getElementById('tg-result').textContent = 'Testing...';
+  const r = await fetch('/api/alert/test/telegram',{method:'POST'});
+  const d = await r.json();
+  document.getElementById('tg-result').textContent = d.success ? '✅ Sent!' : '❌ Failed — check config.py';
+  document.getElementById('tg-result').style.color = d.success ? 'var(--green)' : 'var(--red)';
+}
+
+async function testEmail() {
+  document.getElementById('em-result').textContent = 'Testing...';
+  const r = await fetch('/api/alert/test/email',{method:'POST'});
+  const d = await r.json();
+  document.getElementById('em-result').textContent = d.success ? '✅ Sent!' : '❌ Failed — check config.py';
+  document.getElementById('em-result').style.color = d.success ? 'var(--green)' : 'var(--red)';
+}
+
+function exportCsv() { window.location.href='/api/export'; }
+async function exportPcap() {
+  const r = await fetch('/api/export/pcap',{method:'POST'});
+  if (r.ok) {
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cyberguard_capture.pcap';
+    a.click();
+  } else alert('PCAP buffer empty or Scapy unavailable');
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  event.target.classList.add('active');
+  if (name==='geomap' && !geoMap) initMap();
+  if (name==='honeypot') loadHoneypot();
+  if (name==='behavior') loadBehavior();
+  if (name==='dns') loadDns();
+  if (name==='logs') loadLogs();
+  if (name==='blocked') loadBlocked();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+initCharts();
+
+// On startup:
+soundEnabled = localStorage.getItem('cyberguard_sound') === 'true';
+document.getElementById('audio-toggle').checked = soundEnabled;
+
+// Auto-refresh some panels
+setInterval(()=>{
+  const activeTab = document.querySelector('.tab-content.active')?.id;
+  if (activeTab==='tab-honeypot') loadHoneypot();
+  if (activeTab==='tab-behavior') loadBehavior();
+  if (activeTab==='tab-dns') loadDns();
+}, 30000);
+
+// Load health on startup
+fetch('/api/health').then(r=>r.json()).then(d=>{
+  if (d.model_ready) {
+    document.getElementById('model-badge').textContent = `Model: ${d.cv_accuracy} acc`;
+  }
+  if (d.honeypot_ports) {
+    document.getElementById('honeypot-badge').textContent = `🍯 ${d.honeypot_ports.length} ports`;
+  }
+  if (d.online_learner) {
+    document.getElementById('online-stats').innerHTML = `
+      <div style="color:var(--text2)">Enabled: ${d.online_learner.enabled?'✅':'❌'}</div>
+      <div style="color:var(--text2)">Samples trained: ${d.online_learner.n_trained}</div>
+      <div style="color:var(--text2)">Accuracy: ${d.online_learner.running_accuracy}%</div>`;
+  }
+});
+</script>
+</body>
+</html>
