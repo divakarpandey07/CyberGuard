@@ -35,8 +35,17 @@ class ThreatIntelChecker:
         if not ip or ip in ("?", ""):
             return self._empty(ip)
         if any(ip.startswith(p) for p in _PRIVATE):
-            return {"ip": ip, "abuse_score": 0, "is_known_bad": False,
-                    "total_reports": 0, "source": "private"}
+            return {
+                "ip": ip, "abuse_score": 0, "is_known_bad": False,
+                "total_reports": 0, "source": "private",
+                "shodan": {
+                    "ports": [22, 80, 443, 8080],
+                    "os": "Linux 5.x (Simulated OSINT Target)",
+                    "org": "CyberGuard Lab Network",
+                    "hostnames": ["victim-node.local"],
+                    "source": "simulated"
+                }
+            }
 
         # Cache lookup
         with self._lock:
@@ -56,45 +65,112 @@ class ThreatIntelChecker:
 
         return result
 
-    def _query(self, ip: str) -> dict:
-        key = config.ABUSEIPDB_API_KEY
+    def _query_shodan(self, ip: str) -> dict:
+        # Check if private/local
+        if any(ip.startswith(p) for p in _PRIVATE):
+            # Return a cool mock profile for testing simulations!
+            return {
+                "ports": [22, 80, 443, 8080],
+                "os": "Linux 5.x (Simulated OSINT Target)",
+                "org": "CyberGuard Lab Network",
+                "hostnames": ["victim-node.local"],
+                "source": "simulated"
+            }
+        
+        key = config.SHODAN_API_KEY
         if not key:
-            return self._empty(ip, source="no_api_key")
-
+            return {
+                "ports": [],
+                "os": "Unknown OS (No Key)",
+                "org": "Unknown Org (No Key)",
+                "hostnames": [],
+                "source": "no_api_key"
+            }
+        
         try:
             import requests
             r = requests.get(
-                "https://api.abuseipdb.com/api/v2/check",
-                headers={"Key": key, "Accept": "application/json"},
-                params={"ipAddress": ip, "maxAgeInDays": 30},
-                timeout=5,
+                f"https://api.shodan.io/shodan/host/{ip}?key={key}",
+                timeout=5
             )
-            self._api_used += 1
-
             if r.status_code == 200:
-                d = r.json().get("data", {})
-                score = d.get("abuseConfidenceScore", 0)
+                d = r.json()
                 return {
-                    "ip":             ip,
-                    "abuse_score":    score,
-                    "is_known_bad":   score > 50,
-                    "total_reports":  d.get("totalReports", 0),
-                    "country":        d.get("countryCode", "XX"),
-                    "isp":            d.get("isp", ""),
-                    "domain":         d.get("domain", ""),
-                    "source":         "abuseipdb",
+                    "ports": d.get("ports", []),
+                    "os": d.get("os", "Unknown OS") or "Unknown OS",
+                    "org": d.get("org", "Unknown Org") or "Unknown Org",
+                    "hostnames": d.get("hostnames", []),
+                    "source": "shodan"
                 }
-            if r.status_code == 429:
-                logger.warning("AbuseIPDB daily limit reached (1000/day on free tier)")
-                return self._empty(ip, source="rate_limited")
-            if r.status_code == 401:
-                logger.error("AbuseIPDB: Invalid API key")
-                return self._empty(ip, source="invalid_key")
-
+            elif r.status_code == 404:
+                return {
+                    "ports": [],
+                    "os": "Unindexed Host",
+                    "org": "Unknown Hosting",
+                    "hostnames": [],
+                    "source": "not_scanned"
+                }
         except Exception as e:
-            logger.debug("ThreatIntel error for %s: %s", ip, e)
+            logger.debug("Shodan error for %s: %s", ip, e)
+        
+        return {
+            "ports": [],
+            "os": "Error Fetching",
+            "org": "Error Fetching",
+            "hostnames": [],
+            "source": "error"
+        }
 
-        return self._empty(ip, source="error")
+    def _query(self, ip: str) -> dict:
+        # Default AbuseIPDB payload
+        result = {
+            "ip":             ip,
+            "abuse_score":    0,
+            "is_known_bad":   False,
+            "total_reports":  0,
+            "country":        "XX",
+            "isp":            "",
+            "domain":         "",
+            "source":         "default",
+        }
+
+        # 1. Query AbuseIPDB
+        abuse_key = config.ABUSEIPDB_API_KEY
+        if abuse_key:
+            try:
+                import requests
+                r = requests.get(
+                    "https://api.abuseipdb.com/api/v2/check",
+                    headers={"Key": abuse_key, "Accept": "application/json"},
+                    params={"ipAddress": ip, "maxAgeInDays": 30},
+                    timeout=5,
+                )
+                self._api_used += 1
+                if r.status_code == 200:
+                    d = r.json().get("data", {})
+                    score = d.get("abuseConfidenceScore", 0)
+                    result.update({
+                        "abuse_score":    score,
+                        "is_known_bad":   score > 50,
+                        "total_reports":  d.get("totalReports", 0),
+                        "country":        d.get("countryCode", "XX"),
+                        "isp":            d.get("isp", ""),
+                        "domain":         d.get("domain", ""),
+                        "source":         "abuseipdb",
+                    })
+                elif r.status_code == 429:
+                    logger.warning("AbuseIPDB daily limit reached (1000/day on free tier)")
+                    result["source"] = "abuseipdb_rate_limited"
+                elif r.status_code == 401:
+                    logger.error("AbuseIPDB: Invalid API key")
+                    result["source"] = "abuseipdb_invalid_key"
+            except Exception as e:
+                logger.debug("AbuseIPDB query failed: %s", e)
+                result["source"] = "abuseipdb_error"
+
+        # 2. Query Shodan OSINT
+        result["shodan"] = self._query_shodan(ip)
+        return result
 
     @staticmethod
     def _empty(ip: str, source: str = "unknown") -> dict:
@@ -102,6 +178,13 @@ class ThreatIntelChecker:
             "ip": ip or "?", "abuse_score": 0, "is_known_bad": False,
             "total_reports": 0, "country": "XX", "isp": "",
             "domain": "", "source": source,
+            "shodan": {
+                "ports": [],
+                "os": "Unknown OS",
+                "org": "Unknown Org",
+                "hostnames": [],
+                "source": "empty"
+            }
         }
 
     @property

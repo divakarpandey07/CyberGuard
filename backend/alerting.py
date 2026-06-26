@@ -43,6 +43,13 @@ def _fmt(cls: dict, feat: dict) -> str:
     abuse_score = ti.get("abuse_score", 0)
     reports = ti.get("total_reports", 0)
     
+    # Extract Shodan OSINT
+    shodan = ti.get("shodan") or {}
+    shodan_os = shodan.get("os", "Unknown OS")
+    shodan_org = shodan.get("org", "Unknown Org")
+    shodan_ports = shodan.get("ports", [])
+    ports_str = ", ".join(str(p) for p in shodan_ports[:10]) if shodan_ports else "None Detected"
+    
     # Check block status
     auto_blocked = cls.get("auto_blocked", False)
     if auto_blocked:
@@ -64,6 +71,10 @@ def _fmt(cls: dict, feat: dict) -> str:
         f"📍 <b>Physical Origin:</b> {country} ({city})\n"
         f"📡 <b>ISP Network:</b> <i>{isp}</i>\n"
         f"🎯 <b>Target Sockets:</b> <code>{dst_ip}:{dst_port}</code>\n\n"
+        f"🛡️ <b>OSINT Attacker Profile:</b>\n"
+        f" 🖥️ <b>Host OS:</b> <code>{shodan_os}</code>\n"
+        f" 🔌 <b>Open Ports:</b> <code>{ports_str}</code>\n"
+        f" 🏢 <b>Organization:</b> <i>{shodan_org}</i>\n\n"
         f"💀 <b>AbuseIPDB Score:</b> <code>{abuse_score}%</code> (Reports: {reports})\n"
         f"🛡️ <b>Mitigation Action:</b> {mitigation}\n\n"
         f"💡 <b>Recommendation:</b>\n<i>{rec}</i>\n\n"

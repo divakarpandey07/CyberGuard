@@ -194,6 +194,7 @@ def _process_flow(features: dict):
                 "abuse_score":   ti.get("abuse_score", 0),
                 "is_known_bad":  ti.get("is_known_bad", False),
                 "total_reports": ti.get("total_reports", 0),
+                "shodan":        ti.get("shodan", {}),
             },
             "behavior": {
                 "threat_score": profile.threat_score if profile else 0,

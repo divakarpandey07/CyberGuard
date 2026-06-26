@@ -438,6 +438,7 @@ header h1 span{color:var(--accent)}
         <span class="panel-title" style="font-size:12px;font-weight:600;color:var(--text)">🔬 Raw Packet Payload</span>
         <button class="btn btn-ghost btn-sm" onclick="closeHexdump()" style="padding:2px 8px;margin-left:auto;font-size:11px">✕ Close</button>
       </div>
+      <div id="osint-profile-container" style="padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(30,41,59,0.25);display:none;flex-direction:column;gap:6px"></div>
       <div class="panel-body" style="flex:1;overflow:auto;background:#090d13;color:#8892b0;font-family:monospace;font-size:10px;padding:12px;white-space:pre;line-height:1.45;letter-spacing:-0.2px" id="hexdump-body">
         Select a row in the live feed to view raw packet bytes.
       </div>
@@ -1156,6 +1157,29 @@ function updateMap(ev) {
   const marker = L.circleMarker([g.lat, g.lon],{
     radius:5, color:color, fillColor:color, fillOpacity:.3, weight:1.5
   });
+
+  // Dynamic Shodan HTML
+  let shodanHtml = '';
+  if (ev.threat && ev.threat.shodan && ev.threat.shodan.source !== 'no_api_key' && ev.threat.shodan.source !== 'empty') {
+    const s = ev.threat.shodan;
+    const ports = s.ports || [];
+    const os = s.os || 'Unknown OS';
+    const org = s.org || 'Unknown Org';
+    const portsHtml = ports.length > 0
+      ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px">${ports.slice(0,8).map(p=>`<span style="background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8;padding:1px 4px;border-radius:3px;font-size:9px">${p}</span>`).join('')}</div>`
+      : '<span style="color:#64748b">—</span>';
+
+    shodanHtml = `
+      <hr style="border-color:rgba(255,255,255,0.08);margin:6px 0">
+      <div style="font-size:10px;color:#94a3b8">
+        <b style="color:#38bdf8">🛡️ OSINT Profiler:</b><br>
+        <b>🖥️ OS:</b> <span style="color:#f8fafc">${os}</span><br>
+        <b>🏢 Org:</b> <span style="color:#f8fafc">${org}</span><br>
+        <b>🔌 Open Ports:</b> ${portsHtml}
+      </div>
+    `;
+  }
+
   marker.bindPopup(`
     <div style="font-size:11px;min-width:160px;font-family:'Inter',sans-serif;color:#f8fafc">
       <b>${g.flag?`<img src="${g.flag}" style="margin-right:4px">`:''}${g.country}</b><br>
@@ -1163,6 +1187,7 @@ function updateMap(ev) {
       <b>IP:</b> ${ev.src_ip}<br>
       <b>Label:</b> <span style="color:${ev.is_attack?'#ff3b30':'#00e676'}">${ev.label}</span><br>
       <b>ISP:</b> ${g.isp||'—'}
+      ${shodanHtml}
     </div>`);
   geoLayer.addLayer(marker);
 
@@ -1233,9 +1258,8 @@ function addFeedRow(ev) {
   const row = document.createElement('tr');
   row.style.animation = 'fadeInSimple 0.15s ease-out';
   row.style.cursor = 'pointer';
-  row.dataset.hexdump = ev.hexdump || 'No raw payload captured for this flow.';
   row.onclick = () => {
-    showHexdump(row.dataset.hexdump, ev.src_ip, ev.dst_ip, ev.dst_port, ev.label);
+    showHexdump(ev);
   };
   row.innerHTML = `
     <td style="font-family:monospace;color:var(--text2);font-size:11px">${ev.timestamp}</td>
@@ -1265,11 +1289,39 @@ function clearFeed() {
   closeHexdump();
 }
 
-function showHexdump(hd, src, dst, port, label) {
+function showHexdump(ev) {
   document.getElementById('hexdump-container').style.display = 'flex';
-  const headerText = `🔬 Raw Packet: ${src} → ${dst}:${port} (${label})`;
+  const headerText = `🔬 Raw Packet: ${ev.src_ip} → ${ev.dst_ip}:${ev.dst_port} (${ev.label})`;
   document.querySelector('#hexdump-container .panel-title').textContent = headerText;
-  document.getElementById('hexdump-body').textContent = hd;
+  document.getElementById('hexdump-body').textContent = ev.hexdump || 'No raw payload captured for this flow.';
+
+  // OSINT Display
+  const osintDiv = document.getElementById('osint-profile-container');
+  if (ev.threat && ev.threat.shodan && ev.threat.shodan.source !== 'no_api_key' && ev.threat.shodan.source !== 'empty') {
+    osintDiv.style.display = 'flex';
+    const s = ev.threat.shodan;
+    const ports = s.ports || [];
+    const os = s.os || 'Unknown OS';
+    const org = s.org || 'Unknown Org';
+    const hostnames = s.hostnames || [];
+    
+    const portsHtml = ports.length > 0 
+      ? ports.slice(0, 15).map(p => `<span style="background:rgba(56,189,248,0.15);border:1px solid #38bdf8;color:#38bdf8;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:500">${p}</span>`).join('')
+      : '<span style="color:#64748b;font-size:11px">No Open Ports Discovered</span>';
+      
+    osintDiv.innerHTML = `
+      <div style="font-size:11px;font-weight:600;color:#38bdf8;text-transform:uppercase;letter-spacing:0.5px">🛡️ OSINT Attacker Profile (Shodan)</div>
+      <div style="display:grid;grid-template-columns: 80px 1fr;gap:4px;font-size:11px;color:#94a3b8">
+        <div>🖥️ Host OS:</div><div style="color:#f8fafc;font-weight:500">${os}</div>
+        <div>🏢 Org:</div><div style="color:#f8fafc;font-weight:500">${org}</div>
+        <div>🌐 Domains:</div><div style="color:#f8fafc">${hostnames.join(', ') || 'None'}</div>
+        <div style="grid-column: span 2;margin-top:4px">🔌 Scan Exposed Ports:</div>
+        <div style="grid-column: span 2;display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">${portsHtml}</div>
+      </div>
+    `;
+  } else {
+    osintDiv.style.display = 'none';
+  }
 }
 
 function closeHexdump() {

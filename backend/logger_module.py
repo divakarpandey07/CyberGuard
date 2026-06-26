@@ -39,7 +39,14 @@ class AlertLogger:
                 "label":label,"severity":sev,"confidence":conf,
                 "rule_triggered":classification.get("rule_triggered",False),
                 "recommendation":classification.get("recommendation",""),
-                "scores":classification.get("scores",{})}
+                "scores":classification.get("scores",{}),
+                "geo": features.get("_geo", {}),
+                "threat": {
+                    "abuse_score": features.get("_ti", {}).get("abuse_score", 0),
+                    "is_known_bad": features.get("_ti", {}).get("is_known_bad", False),
+                    "total_reports": features.get("_ti", {}).get("total_reports", 0),
+                    "shodan": features.get("_ti", {}).get("shodan", {})
+                }}
         self._attack_logger.info(json.dumps(record))
         with self._lock:
             self._buffer.appendleft(record)

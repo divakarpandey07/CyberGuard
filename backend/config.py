@@ -117,7 +117,10 @@ GEOIP_CACHE_SIZE = 500
 
 # ── Threat Intelligence (FREE — register at abuseipdb.com) ────────────────
 # Free tier: 1000 checks/day. Guide: SETUP_GUIDE.md → "AbuseIPDB"
-ABUSEIPDB_API_KEY = os.environ.get("ABUSEIPDB_KEY", "")
+ABUSEIPDB_API_KEY = os.environ.get("ABUSEIPDB_API_KEY", os.environ.get("ABUSEIPDB_KEY", ""))
+SHODAN_API_KEY    = os.environ.get("SHODAN_API_KEY", "")
+CENSYS_API_KEY    = os.environ.get("CENSYS_API_KEY", "")
+
 
 # ── Autoencoder Zero-Day Detection (FREE — scikit-learn) ──────────────────
 AUTOENCODER_ENABLED       = False  # Set to True if you want to detect zero-day anomalies (sensitive to local network differences)
