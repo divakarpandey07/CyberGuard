@@ -3,20 +3,32 @@ title CyberGuard IDS v4
 chcp 65001 >nul 2>&1
 
 :: Check for Administrator privileges
->nul 2>&1 "%SYSTEMROOT%\system32\cacls.exe" "%SYSTEMROOT%\system32\config\system"
-if '%errorlevel%' NEQ '0' (
+net session >nul 2>&1
+if '%errorlevel%' == '0' (
+    goto gotAdmin
+)
+
+:: If already attempted elevation once, do not loop
+if "%~1" == "--elevated" (
     echo.
-    echo  ===================================================
-    echo   [!] Requesting Administrative Privileges...
-    echo   This is required for live packet capture to work.
-    echo  ===================================================
+    echo  [ERROR] Elevation failed or was denied.
+    echo  Please open Command Prompt as Administrator manually:
+    echo  Right-click CMD -> Run as Administrator
     echo.
-    goto UACPrompt
-) else ( goto gotAdmin )
+    pause
+    exit /B 1
+)
+
+echo.
+echo  ===================================================
+echo   [!] Requesting Administrative Privileges...
+echo   This is required for live packet capture to work.
+echo  ===================================================
+echo.
 
 :UACPrompt
     echo Set UAC = CreateObject^("Shell.Application"^) > "%temp%\getadmin.vbs"
-    echo UAC.ShellExecute "cmd.exe", "/c %~s0", "", "runas", 1 >> "%temp%\getadmin.vbs"
+    echo UAC.ShellExecute "cmd.exe", "/c """%~s0""" --elevated", "", "runas", 1 >> "%temp%\getadmin.vbs"
     "%temp%\getadmin.vbs"
     del "%temp%\getadmin.vbs"
     exit /B

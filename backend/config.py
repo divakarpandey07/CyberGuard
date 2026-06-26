@@ -84,7 +84,7 @@ ALERT_SOUND      = False
 # ── Flask ──────────────────────────────────────────────────────────────────
 HOST       = os.environ.get("HOST", "0.0.0.0")
 PORT       = int(os.environ.get("PORT", "5000"))
-SECRET_KEY = os.environ.get("CYBERGUARD_SECRET", "cyberguard-v4-2025")
+SECRET_KEY = os.environ.get("CYBERGUARD_SECRET", "CyberGuard-2026")
 DEBUG      = os.environ.get("DEBUG", "false").lower() == "true"
 OS_PLATFORM = platform.system()
 

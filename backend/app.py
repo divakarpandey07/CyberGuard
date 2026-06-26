@@ -76,7 +76,9 @@ def _on_dns_alert(ev):
     feat = {
         "_src_ip": ev["src_ip"],
         "_dst_ip": ev["query"],
-        "_dst_port": "DNS"
+        "_dst_port": "DNS",
+        "_geo": geo.lookup(ev["src_ip"]),
+        "_ti": threat_int.check(ev["src_ip"])
     }
     alertmgr.send_alert(cls, feat)
 
@@ -96,7 +98,9 @@ def _on_honeypot_hit(ev):
     feat = {
         "_src_ip": ev["src_ip"],
         "_dst_ip": "Honeypot",
-        "_dst_port": ev["port"]
+        "_dst_port": ev["port"],
+        "_geo": geo.lookup(ev["src_ip"]),
+        "_ti": threat_int.check(ev["src_ip"])
     }
     alertmgr.send_alert(cls, feat)
 
@@ -125,9 +129,9 @@ def _process_flow(features: dict):
                 cls_result["severity_icon"]  = "⚡"
                 cls_result["is_attack"]      = True
                 cls_result["recommendation"] = "Possible Zero-Day attack. Isolate host and inspect manually."
-            cls_result["ae_score"] = ae_result.get("ae_score", 0.0)
+            cls_result["ae_score"] = features.get("_simulate_ae_score", ae_result.get("ae_score", 0.0))
         else:
-            cls_result["ae_score"] = 0.0
+            cls_result["ae_score"] = features.get("_simulate_ae_score", 0.0)
 
         # 4. Online learning (learn from this flow)
         if online_lrn._ready:
@@ -142,6 +146,8 @@ def _process_flow(features: dict):
 
         # 7. GeoIP lookup
         geo_info = geo.lookup(src_ip)
+        features["_geo"] = geo_info
+        features["_ti"]  = ti
 
         # 8. Log event
         alogger.log_event(cls_result, features)
@@ -206,17 +212,52 @@ def _process_flow(features: dict):
 
 def _system_stats_loop():
     import psutil
+    try:
+        last_counters = psutil.net_io_counters()
+        last_sent = last_counters.bytes_sent
+        last_recv = last_counters.bytes_recv
+    except Exception:
+        last_sent = 0
+        last_recv = 0
+    last_time = time.time()
+    
     while True:
         try:
+            time.sleep(2)
+            now = time.time()
+            dt = now - last_time
+            if dt <= 0:
+                dt = 1.0
+            
+            try:
+                curr_counters = psutil.net_io_counters()
+                curr_sent = curr_counters.bytes_sent
+                curr_recv = curr_counters.bytes_recv
+            except Exception:
+                curr_sent = last_sent
+                curr_recv = last_recv
+                
+            sent_diff = curr_sent - last_sent
+            recv_diff = curr_recv - last_recv
+            
+            last_sent = curr_sent
+            last_recv = curr_recv
+            last_time = now
+            
+            # Speeds in KB/s
+            upload_speed = round((sent_diff / 1024.0) / dt, 1)
+            download_speed = round((recv_diff / 1024.0) / dt, 1)
+            
             cpu = psutil.cpu_percent(interval=None)
             ram = psutil.virtual_memory().percent
             socketio.emit("system_stats", {
                 "cpu": cpu,
                 "ram": ram,
+                "upload_speed": upload_speed,
+                "download_speed": download_speed
             })
         except Exception:
             pass
-        time.sleep(2)
 
 
 def _processing_loop():
@@ -384,6 +425,348 @@ def get_dns():
         "stats":  dns_det.get_stats(),
         "events": dns_det.get_events(50),
     })
+
+
+@app.route("/api/simulate", methods=["POST"])
+def simulate_attack():
+    data = request.get_json(force=True, silent=True) or {}
+    attack_type = data.get("type", "ddos")
+    
+    # Define source IPs to demonstrate geo map plotting
+    ips = {
+        "ddos": "95.213.255.1",          # Russia
+        "portscan": "210.140.10.1",       # Japan
+        "infiltration": "46.38.251.1",     # Germany
+        "zeroday": "185.220.101.5",        # Iceland (Tor exit node)
+        "dns": "198.51.100.12"             # US Proxy
+    }
+    src_ip = ips.get(attack_type, "104.244.42.1") # default US
+    
+    # Build feature template
+    features = {n: 0.0 for n in config.FEATURE_NAMES}
+    features["_src_ip"] = src_ip
+    features["_dst_ip"] = "192.168.1.50"
+    
+    if attack_type == "ddos":
+        features["_simulate_label"] = "DoS/DDoS"
+        features["syn_flag_count"] = 150.0
+        features["ack_flag_count"] = 5.0
+        features["flow_duration"] = 2.0 * 1e6
+        features["flow_packets_s"] = 60000.0
+        features["_dst_port"] = 80
+        features["_hexdump"] = "0000  00 15 5d 01 0a 02 00 15  5d 01 0a 01 08 00 45 00  ..].....].....E.\n0010  00 28 3f bd 40 00 80 06  e5 4e 5f d5 ff 01 c0 a8  .(?.@....N_.....\n0020  01 32 00 50 14 e6 00 00  00 00 00 00 00 00 50 02  .2.P..........P.\n0030  20 00 5f e2 00 00                                 . ._..."
+    elif attack_type == "portscan":
+        features["_simulate_label"] = "PortScan"
+        features["syn_flag_count"] = 45.0
+        features["total_backward_packets"] = 2.0
+        features["_dst_port"] = 22
+        features["_hexdump"] = "0000  00 15 5d 01 0a 02 00 15  5d 01 0a 01 08 00 45 00  ..].....].....E.\n0010  00 28 1c a2 40 00 80 06  08 6a d2 8c 0a 01 c0 a8  .(..@....j......\n0020  01 32 00 16 9c a4 00 00  00 00 00 00 00 00 50 02  .2............P.\n0030  20 00 a2 b3 00 00                                 . ...."
+    elif attack_type == "infiltration":
+        features["_simulate_label"] = "Infiltration"
+        features["total_length_bwd_packets"] = 50000.0
+        features["total_length_fwd_packets"] = 1000.0
+        features["total_backward_packets"] = 15.0
+        features["_dst_port"] = 443
+        features["_hexdump"] = "0000  00 15 5d 01 0a 02 00 15  5d 01 0a 01 08 00 45 00  ..].....].....E.\n0010  01 48 2a bc 40 00 40 06  7b fd 2e 26 fb 01 c0 a8  .H*.@.@.{..&....\n0020  01 32 01 bb d4 31 00 00  00 00 00 00 00 00 80 18  .2...1..........\n0030  01 00 a3 f0 00 00 01 01  08 0a 38 a1 f3 bd 00 0c  ..........8....."
+    elif attack_type == "zeroday":
+        features["_simulate_label"] = "Zero-Day"
+        features["_simulate_ae_score"] = 0.92
+        features["_dst_port"] = 8080
+        features["_hexdump"] = "0000  00 15 5d 01 0a 02 00 15  5d 01 0a 01 08 00 45 00  ..].....].....E.\n0010  00 3c 1a fd 40 00 40 06  bd 42 b9 dc 65 05 c0 a8  .<..@.@..B..e...\n0020  01 32 1f 90 00 50 00 00  00 00 00 00 00 00 a0 02  .2...P..........\n0030  72 10 3a f1 00 00 02 04  05 b4 04 02 08 0a 1d 2b  r.:............+\n0040  6e a0 00 00 00 00 01 03  03 07                    n........."
+    elif attack_type == "dns":
+        import time as _time
+        ev = {
+            "attack_type": "DNS Tunneling",
+            "label":       "DNS Attack",
+            "src_ip":      src_ip,
+            "query":       "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0.malicious-c2-channel.com",
+            "reason":      "subdomain length 40",
+            "severity":    "HIGH",
+            "timestamp":   _time.strftime("%Y-%m-%d %H:%M:%S", _time.gmtime(_time.time())),
+        }
+        logs = [
+            "[SIMULATOR] Initializing outbound DGA lookup simulation...",
+            "[SIMULATOR] Resolving DNS query through default network socket...",
+            "[SIMULATOR] Query payload: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0.malicious-c2-channel.com",
+            "[SIMULATOR] Target sub-domain entropy: 4.12, length: 40 bytes...",
+            "[SIMULATOR] DNS Tunneling signature identified by heuristic parser...",
+            "[SIMULATOR] Dispatched High Severity alert event to notification manager...",
+            "[SIMULATOR] Simulation completed. Check DNS tab dashboard telemetry."
+        ]
+        with dns_det._lock:
+            dns_det._attacks += 1
+            dns_det._total += 1
+            dns_det._events.append(ev)
+            if len(dns_det._events) > 500:
+                dns_det._events = dns_det._events[-500:]
+        threading.Thread(target=_on_dns_alert, args=(ev,), daemon=True).start()
+        return jsonify({"status": "success", "simulated": attack_type, "src_ip": src_ip, "logs": logs})
+        
+    logs_map = {
+        "ddos": [
+            "[SIMULATOR] Initializing DDoS threat vector simulation...",
+            "[SIMULATOR] Selecting high-speed target interface adapter...",
+            "[SIMULATOR] Crafting 150 target TCP packets with SYN flags...",
+            "[SIMULATOR] Generating high flow packet velocity: 60,000 packets/sec...",
+            f"[SIMULATOR] Transmitting flood payload from IP {src_ip} to destination port 80...",
+            "[SIMULATOR] Injecting flow features into ML classifier pipeline...",
+            "[SIMULATOR] Simulation completed. Checking dashboard alert logs."
+        ],
+        "portscan": [
+            "[SIMULATOR] Commencing stealth network mapping scan simulation...",
+            "[SIMULATOR] Crafting 45 SYN probe packets...",
+            "[SIMULATOR] Probing local port range, targeted port 22 (SSH)...",
+            f"[SIMULATOR] Transmitting probe packets from host {src_ip}...",
+            "[SIMULATOR] Flow reassembled. Forwarding features to XGBoost classifier...",
+            "[SIMULATOR] Simulation completed. Check PortScan alerts on dashboard."
+        ],
+        "infiltration": [
+            "[SIMULATOR] Initializing remote command injection simulation...",
+            "[SIMULATOR] Simulating privilege escalation and shell breakout attempts...",
+            "[SIMULATOR] Establishing outbound command & control socket tunnel on port 443...",
+            f"[SIMULATOR] Simulating exfiltration of 50,000 bytes payload to {src_ip}...",
+            "[SIMULATOR] Infiltration signature loaded into classification pipeline...",
+            "[SIMULATOR] Simulation completed. Check Infiltration events."
+        ],
+        "zeroday": [
+            "[SIMULATOR] Initializing zero-day anomaly injection simulation...",
+            "[SIMULATOR] Crafting novel shellcode payload targeted at port 8080...",
+            f"[SIMULATOR] Sending packets from Iceland Tor Exit node {src_ip}...",
+            "[SIMULATOR] Submitting reassembled flow features to PyTorch Autoencoder...",
+            "[SIMULATOR] Reconstruction error calculated at 0.92 (Anomaly threshold: 0.55)...",
+            "[SIMULATOR] Zero-Day classification override triggered. Check anomaly log."
+        ]
+    }
+    logs = logs_map.get(attack_type, ["[SIMULATOR] Unknown simulation type triggered."])
+    threading.Thread(target=_process_flow, args=(features,), daemon=True).start()
+    return jsonify({"status": "success", "simulated": attack_type, "src_ip": src_ip, "logs": logs})
+
+
+@app.route("/api/ai/ask", methods=["POST"])
+def ai_ask():
+    data = request.get_json(force=True, silent=True) or {}
+    query = data.get("query", "")
+    if not query:
+        return jsonify({"error": "No query provided"}), 400
+    
+    import ai_analyst
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    response = ai_analyst.answer_query(query, project_root)
+    return jsonify({"response": response})
+
+
+def save_settings_to_env(settings_dict):
+    env_path = os.path.join(config.ROOT_DIR, ".env")
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+    existing_keys = {}
+    for idx, line in enumerate(lines):
+        clean_line = line.strip()
+        if clean_line and not clean_line.startswith("#") and "=" in clean_line:
+            parts = clean_line.split("=", 1)
+            k = parts[0].strip()
+            existing_keys[k] = idx
+            
+    for key, val in settings_dict.items():
+        if isinstance(val, bool):
+            val_str = "true" if val else "false"
+        else:
+            val_str = str(val)
+            
+        if key in existing_keys:
+            idx = existing_keys[key]
+            orig = lines[idx]
+            suffix = "\r\n" if orig.endswith("\r\n") else "\n"
+            lines[idx] = f"{key}={val_str}{suffix}"
+        else:
+            lines.append(f"{key}={val_str}\n")
+            
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    ifaces_list = []
+    try:
+        from scapy.all import conf
+        for name, iface in conf.ifaces.items():
+            ifaces_list.append({
+                "name": iface.name,
+                "description": getattr(iface, "description", iface.name),
+                "ip": getattr(iface, "ip", "No IP")
+            })
+    except Exception:
+        try:
+            from scapy.all import get_if_list
+            for name in get_if_list():
+                ifaces_list.append({
+                    "name": name,
+                    "description": name,
+                    "ip": "No IP"
+                })
+        except Exception:
+            pass
+
+    return jsonify({
+        "AUTO_BLOCK_ENABLED": config.AUTO_BLOCK_ENABLED,
+        "BLOCK_THRESHOLD": config.BLOCK_THRESHOLD,
+        "BLOCK_DURATION": config.BLOCK_DURATION,
+        "TELEGRAM_ENABLED": config.TELEGRAM_ENABLED,
+        "TELEGRAM_BOT_TOKEN": config.TELEGRAM_BOT_TOKEN,
+        "TELEGRAM_CHAT_ID": config.TELEGRAM_CHAT_ID,
+        "EMAIL_ENABLED": config.EMAIL_ENABLED,
+        "ALERT_EMAIL_FROM": config.EMAIL_SENDER,
+        "ALERT_EMAIL_PASS": config.EMAIL_PASSWORD,
+        "ALERT_EMAIL_TO": config.EMAIL_RECIPIENT,
+        "ABUSEIPDB_KEY": config.ABUSEIPDB_API_KEY,
+        "AUTOENCODER_ENABLED": config.AUTOENCODER_ENABLED,
+        "ANOMALY_DETECTION_ENABLED": config.ANOMALY_DETECTION_ENABLED,
+        "ONLINE_LEARNING_ENABLED": config.ONLINE_LEARNING_ENABLED,
+        "INTERFACE": config.INTERFACE,
+        "interfaces": ifaces_list,
+        "current_interface": sniffer._iface if (sniffer and sniffer.is_running) else config.INTERFACE
+    })
+
+
+@app.route("/api/settings", methods=["POST"])
+def post_settings():
+    global sniffer, _sniffer_running
+    data = request.get_json(force=True, silent=True) or {}
+    
+    # Update variables in-memory
+    config.TELEGRAM_ENABLED = bool(data.get("TELEGRAM_ENABLED", config.TELEGRAM_ENABLED))
+    config.TELEGRAM_BOT_TOKEN = str(data.get("TELEGRAM_BOT_TOKEN", config.TELEGRAM_BOT_TOKEN))
+    config.TELEGRAM_CHAT_ID = str(data.get("TELEGRAM_CHAT_ID", config.TELEGRAM_CHAT_ID))
+    
+    config.EMAIL_ENABLED = bool(data.get("EMAIL_ENABLED", config.EMAIL_ENABLED))
+    config.EMAIL_SENDER = str(data.get("ALERT_EMAIL_FROM", config.EMAIL_SENDER))
+    config.EMAIL_PASSWORD = str(data.get("ALERT_EMAIL_PASS", config.EMAIL_PASSWORD))
+    config.EMAIL_RECIPIENT = str(data.get("ALERT_EMAIL_TO", config.EMAIL_RECIPIENT))
+    
+    config.AUTO_BLOCK_ENABLED = bool(data.get("AUTO_BLOCK_ENABLED", config.AUTO_BLOCK_ENABLED))
+    try:
+        config.BLOCK_THRESHOLD = int(data.get("BLOCK_THRESHOLD", config.BLOCK_THRESHOLD))
+    except Exception:
+        pass
+    try:
+        config.BLOCK_DURATION = int(data.get("BLOCK_DURATION", config.BLOCK_DURATION))
+    except Exception:
+        pass
+        
+    config.ABUSEIPDB_API_KEY = str(data.get("ABUSEIPDB_KEY", config.ABUSEIPDB_API_KEY))
+    config.AUTOENCODER_ENABLED = bool(data.get("AUTOENCODER_ENABLED", config.AUTOENCODER_ENABLED))
+    config.ANOMALY_DETECTION_ENABLED = bool(data.get("ANOMALY_DETECTION_ENABLED", config.ANOMALY_DETECTION_ENABLED))
+    config.ONLINE_LEARNING_ENABLED = bool(data.get("ONLINE_LEARNING_ENABLED", config.ONLINE_LEARNING_ENABLED))
+    
+    new_interface = data.get("INTERFACE", config.INTERFACE)
+    interface_changed = (new_interface != config.INTERFACE)
+    config.INTERFACE = new_interface
+    
+    # Save back to .env
+    env_payload = {
+        "TELEGRAM_ENABLED": config.TELEGRAM_ENABLED,
+        "TELEGRAM_BOT_TOKEN": config.TELEGRAM_BOT_TOKEN,
+        "TELEGRAM_CHAT_ID": config.TELEGRAM_CHAT_ID,
+        "EMAIL_ENABLED": config.EMAIL_ENABLED,
+        "ALERT_EMAIL_FROM": config.EMAIL_SENDER,
+        "ALERT_EMAIL_PASS": config.EMAIL_PASSWORD,
+        "ALERT_EMAIL_TO": config.EMAIL_RECIPIENT,
+        "AUTO_BLOCK_ENABLED": config.AUTO_BLOCK_ENABLED,
+        "BLOCK_THRESHOLD": config.BLOCK_THRESHOLD,
+        "BLOCK_DURATION": config.BLOCK_DURATION,
+        "ABUSEIPDB_KEY": config.ABUSEIPDB_API_KEY,
+        "AUTOENCODER_ENABLED": config.AUTOENCODER_ENABLED,
+        "ANOMALY_DETECTION_ENABLED": config.ANOMALY_DETECTION_ENABLED,
+        "ONLINE_LEARNING_ENABLED": config.ONLINE_LEARNING_ENABLED,
+        "INTERFACE": config.INTERFACE or ""
+    }
+    
+    try:
+        save_settings_to_env(env_payload)
+    except Exception as e:
+        logger.error("Failed to write settings to .env: %s", e)
+        
+    if interface_changed and _sniffer_running and sniffer:
+        logger.info("Restarting sniffer on new interface: %s", new_interface)
+        try:
+            sniffer.stop()
+        except Exception:
+            pass
+        sniffer = PacketSniffer(callback=tracker.add_packet,
+                                dns_callback=dns_det.process_packet,
+                                pcap_callback=pcap_exp.add_packet)
+        sniffer.start()
+        socketio.emit("sniffer_status", {
+            "active": True,
+            "interface": sniffer._iface,
+            "ip": getattr(sniffer, "_ip", None)
+        })
+        
+    return jsonify({"status": "success", "note": "Configuration saved to .env and applied!"})
+
+
+@app.route("/api/ai/audit", methods=["POST"])
+def ai_audit():
+    import psutil, ai_analyst
+    
+    # Gather diagnostics
+    cpu = psutil.cpu_percent()
+    ram = psutil.virtual_memory().percent
+    total_flows = tracker.get_total_flows_count() if hasattr(tracker, 'get_total_flows_count') else len(tracker._flows) if hasattr(tracker, '_flows') else 0
+    if total_flows == 0:
+        total_flows = alogger.get_stats().get("total", 0)
+        
+    attacks_detected = alogger.get_stats().get("attacks", 0)
+    ips_blocked = len(blocker.get_blocked_list())
+    
+    honeypot_active = config.HONEYPOT_ENABLED
+    honeypot_hits = len(honeypot._hits) if hasattr(honeypot, '_hits') else 0
+    
+    dns_stats = dns_det.get_stats() if hasattr(dns_det, 'get_stats') else {}
+    dns_queries = dns_stats.get("total_dns_queries", 0)
+    dns_attacks = dns_stats.get("dns_attacks", 0)
+    
+    tg_enabled = config.TELEGRAM_ENABLED
+    email_enabled = config.EMAIL_ENABLED
+    intel_active = bool(config.ABUSEIPDB_API_KEY)
+    
+    ml_ready = detector.is_ready
+    ml_accuracy = detector.metadata.get("test_accuracy", 0.0) if detector.is_ready else 0.0
+    ae_ready = ae_detect.is_ready
+    online_learning = config.ONLINE_LEARNING_ENABLED
+    auto_block = config.AUTO_BLOCK_ENABLED
+    active_interface = sniffer._iface if (sniffer and sniffer.is_running) else config.INTERFACE or "Default Auto-Detect"
+    
+    audit_payload = {
+        "cpu": cpu,
+        "ram": ram,
+        "total_flows": total_flows,
+        "attacks_detected": attacks_detected,
+        "ips_blocked": ips_blocked,
+        "honeypot_active": honeypot_active,
+        "honeypot_hits": honeypot_hits,
+        "dns_queries": dns_queries,
+        "dns_attacks": dns_attacks,
+        "tg_enabled": tg_enabled,
+        "email_enabled": email_enabled,
+        "intel_active": intel_active,
+        "ml_ready": ml_ready,
+        "ml_accuracy": ml_accuracy,
+        "ae_ready": ae_ready,
+        "online_learning": online_learning,
+        "auto_block": auto_block,
+        "active_interface": active_interface
+    }
+    
+    import json
+    query = f"[audit_data] {json.dumps(audit_payload)}"
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    report = ai_analyst.answer_query(query, project_root)
+    return jsonify({"report": report})
 
 
 @app.route("/api/sniffer", methods=["POST"])

@@ -17,17 +17,59 @@ logger = logging.getLogger("CyberGuard.Alerting")
 
 
 def _fmt(cls: dict, feat: dict) -> str:
-    return (
-        f"\U0001f6a8 CyberGuard IDS v4 Alert\n"
-        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-        f"\U0001f534 Attack   : {cls.get('label', 'Unknown')}\n"
-        f"\u26a1 Severity : {cls.get('severity', 'N/A')}\n"
-        f"\U0001f4ca Confidence: {cls.get('confidence', 0)*100:.1f}%\n"
-        f"\U0001f310 Source IP : {feat.get('_src_ip', '?')}\n"
-        f"\U0001f3af Dest      : {feat.get('_dst_ip', '?')}:{feat.get('_dst_port', 0)}\n"
-        f"\U0001f4a1 Action    : {cls.get('recommendation', 'N/A')}\n"
-        f"\U0001f552 Time      : {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n"
+    label = cls.get("label", "Unknown")
+    severity = cls.get("severity", "LOW")
+    conf = cls.get("confidence", 0.0)
+    rec = cls.get("recommendation", "Inspect traffic immediately.")
+    
+    src_ip = feat.get("_src_ip", "?")
+    dst_ip = feat.get("_dst_ip", "?")
+    dst_port = feat.get("_dst_port", 0)
+    
+    # Extract GeoIP
+    geo = feat.get("_geo") or {}
+    country = geo.get("country", "Unknown Country")
+    city = geo.get("city", "Unknown City")
+    isp = geo.get("isp", "Local Provider")
+    
+    # Emojis for severity
+    sev_emoji = "🟢"
+    if severity == "CRITICAL": sev_emoji = "🔴"
+    elif severity == "HIGH": sev_emoji = "🟠"
+    elif severity == "MEDIUM": sev_emoji = "🟡"
+    
+    # Extract Threat Intel
+    ti = feat.get("_ti") or {}
+    abuse_score = ti.get("abuse_score", 0)
+    reports = ti.get("total_reports", 0)
+    
+    # Check block status
+    auto_blocked = cls.get("auto_blocked", False)
+    if auto_blocked:
+        mitigation = "⛔ <b>IP BANNED (Firewall rule active)</b>"
+    elif cls.get("is_attack", True) and config.AUTO_BLOCK_ENABLED:
+        mitigation = "⚠️ <b>Warning strike registered</b>"
+    else:
+        mitigation = "ℹ️ <b>Monitoring flow reassembly</b>"
+
+    timestamp = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
+    
+    msg = (
+        f"🛡️ <b>CYBERGUARD INTEL ALERT DISPATCH</b> 📡\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚠️ <b>Threat ID:</b> <code>{label}</code>\n"
+        f"{sev_emoji} <b>Severity:</b> <b>{severity}</b>\n"
+        f"🎯 <b>Detection Confidence:</b> <code>{conf*100:.1f}%</code>\n\n"
+        f"🌐 <b>Attacker Source IP:</b> <code>{src_ip}</code>\n"
+        f"📍 <b>Physical Origin:</b> {country} ({city})\n"
+        f"📡 <b>ISP Network:</b> <i>{isp}</i>\n"
+        f"🎯 <b>Target Sockets:</b> <code>{dst_ip}:{dst_port}</code>\n\n"
+        f"💀 <b>AbuseIPDB Score:</b> <code>{abuse_score}%</code> (Reports: {reports})\n"
+        f"🛡️ <b>Mitigation Action:</b> {mitigation}\n\n"
+        f"💡 <b>Recommendation:</b>\n<i>{rec}</i>\n\n"
+        f"🕒 <b>Alert Time:</b> <code>{timestamp}</code>"
     )
+    return msg
 
 
 class AlertManager:
@@ -55,7 +97,7 @@ class AlertManager:
 
     def test_telegram(self) -> bool:
         """Send a test message to verify Telegram setup."""
-        return self._telegram("🧪 CyberGuard test message — Telegram alerts are working!")
+        return self._telegram("🧪 <b>CyberGuard Test Alert</b> — Telegram integrations are fully active and working! ✅")
 
     def test_email(self) -> bool:
         """Send a test email."""
@@ -90,7 +132,7 @@ class AlertManager:
             import requests
             r = requests.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat, "text": message},
+                json={"chat_id": chat, "text": message, "parse_mode": "HTML"},
                 timeout=10,
             )
             if r.status_code == 200:

@@ -71,7 +71,7 @@ sudo apt install python3 python3-pip python3-venv -y
 
 ```bash
 # Project folder me jao
-cd cyberguard-v4
+cd CyberGuard
 
 # Dependencies install karo
 pip install -r requirements.txt
@@ -100,7 +100,7 @@ Ye pre-existing models use karta hai jo already `backend/models/` me hain.
 
 2. CSV files rakho `dataset/` folder me:
    ```
-   cyberguard-v4/
+   CyberGuard/
    └── dataset/
        ├── Monday-WorkingHours.pcap_ISCX.csv
        ├── Tuesday-WorkingHours.pcap_ISCX.csv
@@ -392,7 +392,7 @@ HONEYPOT_PORTS = [21, 23, 3389, 8080, 1433, 3306]  # 22 hataya
 ## 📁 PROJECT STRUCTURE
 
 ```
-cyberguard-v4/
+CyberGuard/
 ├── .env                    ← Tumhara config (git ignore hai — safe)
 ├── .env.example            ← Template
 ├── requirements.txt        ← Python dependencies

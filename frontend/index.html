@@ -3,21 +3,29 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>CyberGuard IDS v3</title>
+<title>CyberGuard IDS v4</title>
+<!-- Google Fonts for Sleek Cybersecurity SOC feel -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- jsPDF and html2canvas for Threat Reports -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <!-- Leaflet for GeoIP Map -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{
-  --bg:#0a0e1a;--panel:#111827;--panel2:#1a2235;--border:#1e2d45;
-  --text:#e2e8f0;--text2:#94a3b8;--accent:#3b82f6;--green:#10b981;
-  --red:#ef4444;--orange:#f97316;--yellow:#f59e0b;--purple:#8b5cf6;
-  --cyan:#06b6d4;--pink:#ec4899;
+  --bg:#060913;--panel:#0b0f19;--panel2:#111624;--border:#172237;
+  --text:#f8fafc;--text2:#64748b;--accent:#00f0ff;--green:#00e676;
+  --red:#ff3b30;--orange:#ff9500;--yellow:#ffcc00;--purple:#af52de;
+  --cyan:#00e5ff;--pink:#ff2d55;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:13.5px;min-height:100vh;letter-spacing:-0.2px}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--panel)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -26,13 +34,13 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 header{background:var(--panel);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
 header h1{font-size:18px;font-weight:700;letter-spacing:.5px}
 header h1 span{color:var(--accent)}
-.badge{background:var(--panel2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:11px;color:var(--text2)}
+.badge{background:var(--panel2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:11px;color:var(--text2);font-family:'JetBrains Mono',monospace;font-weight:500}
 .badge.online{border-color:var(--green);color:var(--green)}
 .ml-spacer{flex:1}
 
 /* Tabs */
 .tabs{display:flex;gap:4px;background:var(--panel);border-bottom:1px solid var(--border);padding:0 20px;overflow-x:auto}
-.tab-btn{padding:10px 18px;border:none;background:none;color:var(--text2);cursor:pointer;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+.tab-btn{padding:10px 18px;border:none;background:none;color:var(--text2);cursor:pointer;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;font-weight:500}
 .tab-btn.active{color:var(--accent);border-color:var(--accent)}
 .tab-btn:hover:not(.active){color:var(--text)}
 .tab-content{display:none;padding:16px 20px;animation:fadeIn .2s}
@@ -44,10 +52,15 @@ header h1 span{color:var(--accent)}
 .g2{grid-template-columns:repeat(2,1fr)}
 .g3{grid-template-columns:repeat(3,1fr)}
 .g4{grid-template-columns:repeat(4,1fr)}
+.g5{grid-template-columns:repeat(5,1fr)}
+@media(max-width:1100px){.g5{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:900px){.g4,.g3,.g2{grid-template-columns:1fr}}
+@media(max-width:600px){.g5{grid-template-columns:1fr}}
+
+@keyframes blink { 50% { opacity: 0; } }
 
 /* Stat cards */
-.stat-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;position:relative;overflow:hidden}
+.stat-card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:16px;position:relative;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
 .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
 .stat-card.green::before{background:var(--green)}
 .stat-card.red::before{background:var(--red)}
@@ -55,29 +68,32 @@ header h1 span{color:var(--accent)}
 .stat-card.blue::before{background:var(--accent)}
 .stat-card.purple::before{background:var(--purple)}
 .stat-card.cyan::before{background:var(--cyan)}
-.stat-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px}
-.stat-val{font-size:28px;font-weight:700;margin:6px 0}
+.stat-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;font-weight:600}
+.stat-val{font-size:28px;font-weight:700;margin:6px 0;font-family:'JetBrains Mono',monospace;letter-spacing:-0.75px;color:#fff}
 .stat-sub{font-size:11px;color:var(--text2)}
 
 /* Panel */
-.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,0.2)}
 .panel-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
-.panel-title{font-weight:600;font-size:13px}
+.panel-title{font-weight:600;font-size:13px;letter-spacing:-0.1px}
 .panel-body{padding:16px}
 
 /* Table */
-.tbl{width:100%;border-collapse:collapse;font-size:12px}
-.tbl th{background:var(--panel2);padding:8px 12px;text-align:left;color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
-.tbl td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl{width:100%;border-collapse:collapse;font-size:12px;font-family:'JetBrains Mono',monospace}
+.tbl th{background:var(--panel2);padding:8px 12px;text-align:left;color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.75px;border-bottom:1px solid var(--border);font-family:'Inter',system-ui,sans-serif}
+.tbl td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--text)}
 .tbl tr:hover td{background:var(--panel2)}
 .tbl tr:last-child td{border:none}
+.tbl-fixed{table-layout:fixed}
+.tbl-fixed td, .tbl-fixed th{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@keyframes fadeInSimple{from{opacity:0}to{opacity:1}}
 
 /* Severity badges */
-.sev{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
-.sev.CRITICAL{background:#7f1d1d;color:#fca5a5}
-.sev.HIGH{background:#431407;color:#fdba74}
-.sev.MEDIUM{background:#451a03;color:#fde68a}
-.sev.LOW{background:#064e3b;color:#6ee7b7}
+.sev{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:0.25px}
+.sev.CRITICAL{background:rgba(255,59,48,0.14);color:#ff3b30;border:1px solid rgba(255,59,48,0.25)}
+.sev.HIGH{background:rgba(255,149,0,0.14);color:#ff9500;border:1px solid rgba(255,149,0,0.25)}
+.sev.MEDIUM{background:rgba(255,204,0,0.14);color:#ffcc00;border:1px solid rgba(255,204,0,0.25)}
+.sev.LOW{background:rgba(0,230,118,0.14);color:#00e676;border:1px solid rgba(0,230,118,0.25)}
 
 /* Buttons */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s}
@@ -95,7 +111,7 @@ header h1 span{color:var(--accent)}
 .ctrl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
 
 /* Map */
-#geomap{height:380px;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+#geomap{height:380px;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
 
 /* Gauge bar */
 .gauge-wrap{margin-bottom:10px}
@@ -147,6 +163,131 @@ header h1 span{color:var(--accent)}
 @keyframes slideInRight{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
 @keyframes flowDash{to{stroke-dashoffset:-20}}
 .map-arc{animation:flowDash 1.5s linear infinite}
+
+/* AI Copilot Widget */
+#ai-copilot-widget {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 380px;
+  height: 520px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+  transform: translateY(120%);
+  opacity: 0;
+}
+#ai-copilot-widget.open {
+  transform: translateY(0);
+  opacity: 1;
+}
+#ai-copilot-trigger {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  padding: 12px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+  transition: transform 0.2s;
+}
+#ai-copilot-trigger:hover {
+  transform: scale(1.05);
+}
+.chat-header {
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chat-messages {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chat-msg {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.chat-msg.bot {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  align-self: flex-start;
+}
+.chat-msg.user {
+  background: var(--accent);
+  color: #fff;
+  align-self: flex-end;
+}
+.chat-input-area {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel2);
+}
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+.chat-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.chat-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.api-key-container {
+  display: none;
+  margin-top: 4px;
+}
+.api-key-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.api-key-toggle {
+  font-size: 11px;
+  color: var(--text2);
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 8px;
+  display: block;
+}
 </style>
 </head>
 <body>
@@ -167,6 +308,7 @@ header h1 span{color:var(--accent)}
   <button class="btn btn-danger" id="stop-btn" onclick="snifferControl('stop')" style="display:none">■ Stop</button>
   <button class="btn btn-ghost btn-sm" onclick="exportCsv()">⬇ Export CSV</button>
   <button class="btn btn-ghost btn-sm" onclick="exportPcap()">📦 Export PCAP</button>
+  <button class="btn btn-ghost btn-sm" style="border-color:var(--cyan);color:var(--cyan);" onclick="generatePDFReport()">📋 Threat Report (PDF)</button>
 </header>
 
 <div class="tabs">
@@ -183,20 +325,21 @@ header h1 span{color:var(--accent)}
 
 <!-- OVERVIEW TAB -->
 <div id="tab-overview" class="tab-content active">
-  <div class="grid g4" style="margin-bottom:14px">
+  <div class="grid g5" style="margin-bottom:14px">
     <div class="stat-card green"><div class="stat-label">Total Flows</div><div class="stat-val" id="s-total">0</div><div class="stat-sub">Since startup</div></div>
     <div class="stat-card red"><div class="stat-label">Attacks Detected</div><div class="stat-val" id="s-attacks">0</div><div class="stat-sub">All types combined</div></div>
     <div class="stat-card yellow"><div class="stat-label">IPs Blocked</div><div class="stat-val" id="s-blocked">0</div><div class="stat-sub">Firewall rules active</div></div>
     <div class="stat-card blue"><div class="stat-label">Honeypot Hits</div><div class="stat-val" id="s-honeypot">0</div><div class="stat-sub">Probes intercepted</div></div>
+    <div class="stat-card cyan" style="min-height:102px;"><div class="stat-label">Throughput (Live)</div><div class="stat-val" id="s-bandwidth" style="font-size:16px; margin: 4px 0 0 0; line-height:1.25; font-family:monospace; color:var(--cyan);">↓ 0.0 KB/s<br>↑ 0.0 KB/s</div><canvas id="bandwidth-sparkline" style="position:absolute; bottom:0; left:0; width:100%; height:32px; pointer-events:none; opacity:0.85;"></canvas></div>
   </div>
   <div class="grid g2">
     <div class="panel">
       <div class="panel-header"><span class="panel-title">📈 Attack Distribution</span></div>
-      <div class="panel-body"><canvas id="attack-chart" height="200"></canvas></div>
+      <div class="panel-body" style="height:250px; position:relative;"><canvas id="attack-chart"></canvas></div>
     </div>
     <div class="panel">
       <div class="panel-header"><span class="panel-title">🔄 Traffic Timeline</span></div>
-      <div class="panel-body"><canvas id="timeline-chart" height="200"></canvas></div>
+      <div class="panel-body" style="height:250px; position:relative;"><canvas id="timeline-chart"></canvas></div>
     </div>
   </div>
   <div style="margin-top:14px" class="grid g3">
@@ -226,6 +369,31 @@ header h1 span{color:var(--accent)}
       </div>
     </div>
   </div>
+
+  <!-- Attack Simulator Panel -->
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-header"><span class="panel-title">⚔️ Live Threat Simulator (Safe Testing Tool)</span></div>
+    <div class="panel-body" style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; padding:16px;">
+      <span style="font-size:12px; color:var(--text2); max-width:320px;">
+        Trigger safe, mathematically modeled attack flows to verify ML classifications, real-time alert notifications, mapping, and automated firewall blocking.
+      </span>
+      <button class="btn btn-danger" onclick="triggerSimulation('ddos')">⚡ Simulate DDoS Attack</button>
+      <button class="btn" style="background:var(--yellow); color:#000; border:none; padding:8px 16px; border-radius:4px; font-weight:600; cursor:pointer;" onclick="triggerSimulation('portscan')">🔍 Simulate Port Scan</button>
+      <button class="btn" style="background:var(--purple); color:#fff; border:none; padding:8px 16px; border-radius:4px; font-weight:600; cursor:pointer;" onclick="triggerSimulation('infiltration')">🕸️ Simulate Infiltration</button>
+      <button class="btn" style="background:#ec4899; color:#fff; border:none; padding:8px 16px; border-radius:4px; font-weight:600; cursor:pointer;" onclick="triggerSimulation('zeroday')">⚡ Simulate Zero-Day</button>
+      <button class="btn" style="background:#06b6d4; color:#fff; border:none; padding:8px 16px; border-radius:4px; font-weight:600; cursor:pointer;" onclick="triggerSimulation('dns')">🌐 Simulate DNS Attack</button>
+      <span id="simulation-status" style="font-size:12px; color:var(--green); font-weight:600; margin-left:auto;"></span>
+      
+      <!-- Retro Console for Simulation logs -->
+      <div id="simulator-console" style="display:none; width:100%; background:#070a13; border:1px solid var(--border); border-radius:6px; padding:12px; font-family:'Courier New', Courier, monospace; font-size:11px; color:#10b981; margin-top:12px; max-height:160px; overflow-y:auto; line-height:1.5; box-shadow: inset 0 0 10px #000;">
+        <div style="color:var(--text2); margin-bottom:6px; border-bottom:1px solid #1e2d45; padding-bottom:4px; display:flex; justify-content:space-between; font-weight:600; font-family:'Segoe UI',sans-serif;">
+          <span>🖥️ THREAT VECTOR SIMULATION CONSOLE</span>
+          <span style="color:#10b981; animation: blink 1s infinite;">● SIMULATOR ONLINE</span>
+        </div>
+        <div id="sim-console-lines"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- LIVE FEED TAB -->
@@ -246,7 +414,18 @@ header h1 span{color:var(--accent)}
   </div>
   <div style="display:flex;gap:14px;align-items:flex-start;width:100%">
     <div class="panel" style="flex:3;height:600px;overflow-y:auto" id="live-feed-container">
-      <table class="tbl" style="width:100%">
+      <table class="tbl tbl-fixed" style="width:100%">
+        <colgroup>
+          <col style="width: 12%">
+          <col style="width: 16%">
+          <col style="width: 5%">
+          <col style="width: 18%">
+          <col style="width: 15%">
+          <col style="width: 10%">
+          <col style="width: 10%">
+          <col style="width: 9%">
+          <col style="width: 5%">
+        </colgroup>
         <thead><tr>
           <th>Time</th><th>Src IP</th><th>🌍</th><th>Dst IP:Port</th>
           <th>Label</th><th>Severity</th><th>Confidence</th><th>AE Score</th><th>Action</th>
@@ -270,7 +449,13 @@ header h1 span{color:var(--accent)}
 <div id="tab-geomap" class="tab-content">
   <div class="grid g2" style="margin-bottom:14px">
     <div class="panel">
-      <div class="panel-header"><span class="panel-title">🌍 Live Attack Origins</span><span class="stat-sub">ip-api.com — Free, No API key</span></div>
+      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <span class="panel-title">🌍 Live Network & Threat Map</span>
+        <div style="display:flex; gap:12px; font-size:12px; align-items:center; background:rgba(255,255,255,0.05); padding:4px 10px; border-radius:15px; border:1px solid var(--border)">
+          <span style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; box-shadow: 0 0 6px #10b981;"></span> Normal Traffic</span>
+          <span style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444; box-shadow: 0 0 6px #ef4444;"></span> Active Threats</span>
+        </div>
+      </div>
       <div class="panel-body" style="padding:8px">
         <div id="geomap"></div>
       </div>
@@ -421,64 +606,152 @@ header h1 span{color:var(--accent)}
 <!-- SETTINGS TAB -->
 <div id="tab-settings" class="tab-content">
   <div class="grid g2">
+    <!-- Network Adapter Card -->
     <div class="panel">
-      <div class="panel-header"><span class="panel-title">📡 Telegram Alerts</span><span class="badge">FREE</span></div>
-      <div class="panel-body" style="font-size:12px">
-        <div style="color:var(--text2);line-height:1.8;margin-bottom:12px">
-          <b>Setup (2 minutes):</b><br>
-          1. Open Telegram → search <b>@BotFather</b><br>
-          2. Send <code style="background:var(--panel2);padding:1px 4px;border-radius:3px">/newbot</code> → follow steps → copy <b>token</b><br>
-          3. Send any message to your bot<br>
-          4. Visit <code style="background:var(--panel2);padding:1px 4px;border-radius:3px">api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code><br>
-          5. Copy <b>chat_id</b> from response<br>
-          6. In <b>config.py</b>: set <code>TELEGRAM_ENABLED=True</code>, paste token & chat_id
+      <div class="panel-header"><span class="panel-title">📡 Network Sniffing Interface</span><span class="badge" id="current-iface-badge">Default</span></div>
+      <div class="panel-body" style="font-size:12px; display:flex; flex-direction:column; gap:10px;">
+        <div>
+          <label class="toggle-lbl" style="display:block; margin-bottom:4px;">Listen Interface Adapter:</label>
+          <select id="settings-interface" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;"></select>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="testTelegram()">🧪 Test Telegram</button>
-        <span id="tg-result" style="margin-left:8px;font-size:11px"></span>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-header"><span class="panel-title">📧 Email Alerts</span><span class="badge">FREE</span></div>
-      <div class="panel-body" style="font-size:12px">
-        <div style="color:var(--text2);line-height:1.8;margin-bottom:12px">
-          <b>Gmail Setup:</b><br>
-          1. Google Account → Security → 2-Step Verification → <b>App Passwords</b><br>
-          2. Generate password for "Mail" → copy 16-char code<br>
-          3. In <b>config.py</b>: set <code>EMAIL_ENABLED=True</code><br>
-          4. Set <code>EMAIL_SENDER</code>, <code>EMAIL_PASSWORD</code>, <code>EMAIL_RECIPIENT</code>
+        <div style="color:var(--text2); font-size:11px; line-height:1.4;">
+          Note: If live capturing is running, changing the interface will automatically restart the sniffer process on the selected network adapter.
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="testEmail()">🧪 Test Email</button>
-        <span id="em-result" style="margin-left:8px;font-size:11px"></span>
       </div>
     </div>
+
+    <!-- IPS Auto Blocking Card -->
     <div class="panel">
-      <div class="panel-header"><span class="panel-title">🔒 Threat Intelligence</span><span class="badge">FREE tier</span></div>
-      <div class="panel-body" style="font-size:12px;color:var(--text2);line-height:1.8">
-        <b>AbuseIPDB Setup (optional):</b><br>
-        1. Register free at <b>abuseipdb.com</b><br>
-        2. Go to Account → API → Create Key<br>
-        3. Free tier: <b>1000 checks/day</b><br>
-        4. In config.py: set <code>ABUSEIPDB_API_KEY="your-key"</code><br><br>
-        <span style="color:var(--green)">✅ Works without key (just skips IP reputation)</span>
+      <div class="panel-header">
+        <span class="panel-title">🔒 Auto-Blocking Intrusion Prevention (IPS)</span>
+        <label class="toggle">
+          <input type="checkbox" id="settings-auto-block">
+          <div class="toggle-track"><div class="toggle-thumb"></div></div>
+        </label>
+      </div>
+      <div class="panel-body" style="font-size:12px; display:flex; flex-direction:column; gap:10px;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+          <div>
+            <label class="toggle-lbl" style="display:block; margin-bottom:4px;">IP Strike Limit:</label>
+            <input type="number" id="settings-block-threshold" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;">
+          </div>
+          <div>
+            <label class="toggle-lbl" style="display:block; margin-bottom:4px;">Block Duration (sec):</label>
+            <input type="number" id="settings-block-duration" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;">
+          </div>
+        </div>
+        <div style="color:var(--text2); font-size:11px; line-height:1.4;">
+          Blocks attacking IPs via host firewall rules (`netsh` on Windows / `iptables` on Linux) after they exceed the strike limit.
+        </div>
       </div>
     </div>
+
+    <!-- Telegram Card -->
     <div class="panel">
-      <div class="panel-header"><span class="panel-title">🌱 Online Learning</span><span class="badge">Optional</span></div>
-      <div class="panel-body" style="font-size:12px;color:var(--text2);line-height:1.8">
-        <b>Enable incremental model updates:</b><br>
-        <code style="background:var(--panel2);padding:2px 6px;border-radius:3px;display:block;margin:6px 0">pip install river</code>
-        Then in config.py: set <code>ONLINE_LEARNING_ENABLED=True</code><br><br>
-        Uses Hoeffding Adaptive Tree — learns from every live flow without full retraining.
-        <div id="online-stats" style="margin-top:10px"></div>
+      <div class="panel-header">
+        <span class="panel-title">📡 Telegram Alerts</span>
+        <label class="toggle">
+          <input type="checkbox" id="settings-telegram-enabled">
+          <div class="toggle-track"><div class="toggle-thumb"></div></div>
+        </label>
+      </div>
+      <div class="panel-body" style="font-size:12px; display:flex; flex-direction:column; gap:8px;">
+        <div>
+          <label class="toggle-lbl" style="display:block; margin-bottom:4px;">Bot Token:</label>
+          <input type="password" id="settings-telegram-token" placeholder="e.g. 12345678:ABCDefg..." style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;">
+        </div>
+        <div>
+          <label class="toggle-lbl" style="display:block; margin-bottom:4px;">Recipient Chat ID:</label>
+          <input type="text" id="settings-telegram-chat" placeholder="e.g. 987654321" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;">
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="testTelegram()">🧪 Test Telegram</button>
+          <span id="tg-result" style="font-size:11px"></span>
+        </div>
       </div>
     </div>
+
+    <!-- Email Alerts Card -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">📧 Email Alerts (Gmail SMTP)</span>
+        <label class="toggle">
+          <input type="checkbox" id="settings-email-enabled">
+          <div class="toggle-track"><div class="toggle-thumb"></div></div>
+        </label>
+      </div>
+      <div class="panel-body" style="font-size:12px; display:flex; flex-direction:column; gap:8px;">
+        <div>
+          <label class="toggle-lbl" style="display:block; margin-bottom:4px;">Sender Gmail:</label>
+          <input type="text" id="settings-email-sender" placeholder="your-email@gmail.com" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;">
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+          <div>
+            <label class="toggle-lbl" style="display:block; margin-bottom:4px;">Gmail App Password:</label>
+            <input type="password" id="settings-email-password" placeholder="16-character code" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;">
+          </div>
+          <div>
+            <label class="toggle-lbl" style="display:block; margin-bottom:4px;">Recipient Email:</label>
+            <input type="text" id="settings-email-recipient" placeholder="receiver@email.com" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;">
+          </div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="testEmail()">🧪 Test Email</button>
+          <span id="em-result" style="font-size:11px"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Threat Intel Card -->
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">🛡️ AbuseIPDB Threat Intelligence</span></div>
+      <div class="panel-body" style="font-size:12px; display:flex; flex-direction:column; gap:8px;">
+        <div>
+          <label class="toggle-lbl" style="display:block; margin-bottom:4px;">AbuseIPDB API Key (Optional):</label>
+          <input type="password" id="settings-abuse-key" placeholder="Enter AbuseIPDB API key..." style="background:var(--panel2); color:var(--text); border:1px solid var(--border); padding:8px; border-radius:4px; width:100%; font-size:12px; outline:none;">
+        </div>
+        <div style="color:var(--text2); font-size:11px; line-height:1.4;">
+          Adds global IP reputation score evaluations to local threat classifications. Free tier allows 1,000 queries per day.
+        </div>
+      </div>
+    </div>
+
+    <!-- Detection Engines Card -->
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">⚙️ Core Detection Modules Tuning</span></div>
+      <div class="panel-body" style="font-size:12px; display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <span>Isolation Forest Anomaly Classifier</span>
+          <label class="toggle">
+            <input type="checkbox" id="settings-anomaly-enabled">
+            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+          </label>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <span>Zero-Day Deep Autoencoder (PyTorch)</span>
+          <label class="toggle">
+            <input type="checkbox" id="settings-autoencoder-enabled">
+            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+          </label>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <span>Online Incremental Learning (River ML)</span>
+          <label class="toggle">
+            <input type="checkbox" id="settings-online-enabled">
+            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audio Settings Card -->
     <div class="panel">
       <div class="panel-header"><span class="panel-title">🔊 Audio Notifications</span><span class="badge">Local</span></div>
       <div class="panel-body" style="font-size:12px;color:var(--text2);line-height:1.8">
         <b>Play alarm sounds:</b><br>
         Synthesizes notification chimes when high/critical attacks are detected.
         <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between">
-          <span>Enable alert audio</span>
+          <span style="color:var(--text)">Enable alert audio</span>
           <label class="toggle">
             <input type="checkbox" id="audio-toggle" onchange="toggleAudio(this.checked)">
             <div class="toggle-track"><div class="toggle-thumb"></div></div>
@@ -486,6 +759,10 @@ header h1 span{color:var(--accent)}
         </div>
       </div>
     </div>
+  </div>
+  
+  <div style="margin-top:14px; display:flex; justify-content:center;">
+    <button class="btn btn-primary" onclick="saveSettings()" style="width:100%; padding:10px; display:flex; justify-content:center; gap:6px; font-size:13px;">💾 Commit & Save Configuration</button>
   </div>
 </div>
 
@@ -581,6 +858,17 @@ socket.on('model_info', meta => {
 socket.on('system_stats', d => {
   document.getElementById('cpu-badge').textContent = `💻 CPU: ${d.cpu.toFixed(0)}%`;
   document.getElementById('ram-badge').textContent = `🧠 RAM: ${d.ram.toFixed(0)}%`;
+  
+  if (typeof d.upload_speed !== 'undefined' && typeof d.download_speed !== 'undefined') {
+    document.getElementById('s-bandwidth').innerHTML = `↓ ${d.download_speed.toFixed(1)} KB/s<br>↑ ${d.upload_speed.toFixed(1)} KB/s`;
+    
+    // Add throughput to sparkline history (combined up + down)
+    bandwidthHistory.push(d.download_speed + d.upload_speed);
+    if (bandwidthHistory.length > 20) {
+      bandwidthHistory.shift();
+    }
+    drawBandwidthSparkline(bandwidthHistory);
+  }
 });
 
 socket.on('stats_update', s => {
@@ -620,24 +908,179 @@ socket.on('dns_event', ev => {
 
 // ── Charts ────────────────────────────────────────────────────────────────
 function initCharts() {
-  const darkGrid = {grid:{color:'#1e2d4544'},ticks:{color:'#94a3b8'},border:{color:'#1e2d45'}};
-  attackChart = new Chart(document.getElementById('attack-chart'),{
-    type:'doughnut',
-    data:{labels:['Normal','DoS/DDoS','PortScan','Infiltration','Anomaly','Zero-Day','DNS Attack'],
-          datasets:[{data:[0,0,0,0,0,0,0],
-            backgroundColor:['#10b981','#ef4444','#f59e0b','#8b5cf6','#6b7280','#dc2626','#0ea5e9'],
-            borderWidth:0,hoverOffset:4}]},
-    options:{plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},cutout:'65%'}
+  const darkGrid = {
+    grid: {
+      color: 'rgba(30, 45, 69, 0.18)',
+      borderDash: [4, 4],
+      drawBorder: false
+    },
+    ticks: {
+      color: '#94a3b8',
+      font: { size: 10 }
+    }
+  };
+
+  const chartTooltip = {
+    enabled: true,
+    backgroundColor: '#111827',
+    titleColor: '#e2e8f0',
+    bodyColor: '#94a3b8',
+    borderColor: '#1e2d45',
+    borderWidth: 1,
+    padding: 8,
+    cornerRadius: 6,
+    usePointStyle: true,
+    boxWidth: 8,
+    boxHeight: 8
+  };
+
+  // 1. Attack Distribution Doughnut Chart with Center-text
+  const centerTextPlugin = {
+    id: 'centerText',
+    beforeDraw: function(chart) {
+      if (chart.config.type !== 'doughnut') return;
+      const width = chart.width,
+            height = chart.height,
+            ctx = chart.ctx;
+      ctx.restore();
+      
+      const data = chart.data.datasets[0].data || [];
+      const total = data.reduce((a, b) => a + b, 0);
+      
+      ctx.font = "bold 20px 'Segoe UI', sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#e2e8f0";
+      
+      const text = total.toLocaleString(),
+            textX = Math.round((width - ctx.measureText(text).width) / 2),
+            textY = height / 2 + 10;
+      
+      ctx.fillText(text, textX, textY);
+      
+      ctx.font = "bold 9px 'Segoe UI', sans-serif";
+      ctx.fillStyle = "#94a3b8";
+      const label = "MONITORED",
+            labelX = Math.round((width - ctx.measureText(label).width) / 2),
+            labelY = height / 2 - 12;
+      ctx.fillText(label, labelX, labelY);
+      
+      ctx.save();
+    }
+  };
+
+  attackChart = new Chart(document.getElementById('attack-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Normal', 'DoS/DDoS', 'PortScan', 'Infiltration', 'Anomaly', 'Zero-Day', 'DNS Attack'],
+      datasets: [{
+        data: [0, 0, 0, 0, 0, 0, 0],
+        backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#6b7280', '#dc2626', '#0ea5e9'],
+        borderWidth: 2,
+        borderColor: '#111827',
+        hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 8,
+            usePointStyle: true,
+            padding: 8,
+            color: '#94a3b8',
+            font: { size: 10 }
+          }
+        },
+        tooltip: chartTooltip
+      },
+      cutout: '68%'
+    },
+    plugins: [centerTextPlugin]
   });
-  timelineChart = new Chart(document.getElementById('timeline-chart'),{
-    type:'line',
-    data:{labels:[],datasets:[
-      {label:'Normal',data:[],borderColor:'#10b981',backgroundColor:'#10b98122',fill:true,tension:.4,pointRadius:0},
-      {label:'Attack',data:[],borderColor:'#ef4444',backgroundColor:'#ef444422',fill:true,tension:.4,pointRadius:0}
-    ]},
-    options:{plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
-             scales:{x:{...darkGrid},y:{...darkGrid,beginAtZero:true}},
-             animation:{duration:300}}
+
+  // 2. Traffic Timeline Line Chart with glowing gradients
+  const tCtx = document.getElementById('timeline-chart').getContext('2d');
+  
+  const normalGrad = tCtx.createLinearGradient(0, 0, 0, 200);
+  normalGrad.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
+  normalGrad.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+  
+  const attackGrad = tCtx.createLinearGradient(0, 0, 0, 200);
+  attackGrad.addColorStop(0, 'rgba(239, 68, 68, 0.35)');
+  attackGrad.addColorStop(1, 'rgba(239, 68, 68, 0.0)');
+
+  timelineChart = new Chart(tCtx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'Normal',
+          data: [],
+          borderColor: '#10b981',
+          borderWidth: 2,
+          backgroundColor: normalGrad,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 2,
+          pointBorderWidth: 1,
+          pointBackgroundColor: '#111827',
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: '#10b981',
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 1.5
+        },
+        {
+          label: 'Attack',
+          data: [],
+          borderColor: '#ef4444',
+          borderWidth: 2,
+          backgroundColor: attackGrad,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 2,
+          pointBorderWidth: 1,
+          pointBackgroundColor: '#111827',
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: '#ef4444',
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 1.5
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'end',
+          labels: {
+            boxWidth: 8,
+            usePointStyle: true,
+            padding: 8,
+            color: '#94a3b8',
+            font: { size: 10 }
+          }
+        },
+        tooltip: chartTooltip
+      },
+      scales: {
+        x: darkGrid,
+        y: {
+          ...darkGrid,
+          beginAtZero: true,
+          ticks: {
+            ...darkGrid.ticks,
+            precision: 0
+          }
+        }
+      },
+      animation: { duration: 250 }
+    }
   });
 }
 
@@ -709,16 +1152,16 @@ function updateMap(ev) {
   const g = ev.geo;
   if (!g.lat && !g.lon) return;
   if (g.is_private || g.country_code === 'XX') return;
-  const color = ev.is_attack ? '#ef4444' : '#10b981';
+  const color = ev.is_attack ? '#ff3b30' : '#00e676';
   const marker = L.circleMarker([g.lat, g.lon],{
-    radius:6, color:color, fillColor:color, fillOpacity:.8, weight:1
+    radius:5, color:color, fillColor:color, fillOpacity:.3, weight:1.5
   });
   marker.bindPopup(`
-    <div style="font-size:12px;min-width:160px">
+    <div style="font-size:11px;min-width:160px;font-family:'Inter',sans-serif;color:#f8fafc">
       <b>${g.flag?`<img src="${g.flag}" style="margin-right:4px">`:''}${g.country}</b><br>
       ${g.city||''}${g.city?', ':''}<br>
       <b>IP:</b> ${ev.src_ip}<br>
-      <b>Label:</b> <span style="color:${ev.is_attack?'#ef4444':'#10b981'}">${ev.label}</span><br>
+      <b>Label:</b> <span style="color:${ev.is_attack?'#ff3b30':'#00e676'}">${ev.label}</span><br>
       <b>ISP:</b> ${g.isp||'—'}
     </div>`);
   geoLayer.addLayer(marker);
@@ -735,9 +1178,9 @@ function updateMap(ev) {
     const points = getBezierPoints(fromLatLng, toLatLng);
     const line = L.polyline(points, {
       color: color,
-      weight: 2,
-      opacity: 0.8,
-      dashArray: '6, 6',
+      weight: 1.5,
+      opacity: 0.6,
+      dashArray: '4, 4',
       className: 'map-arc',
     }).addTo(geoLayer);
     
@@ -768,6 +1211,17 @@ function updateCountries(ev) {
 }
 
 // ── Live Feed ─────────────────────────────────────────────────────────────
+let scrollPending = false;
+function triggerAutoScroll() {
+  if (scrollPending) return;
+  scrollPending = true;
+  requestAnimationFrame(() => {
+    const container = document.getElementById('live-feed-container');
+    if (container) container.scrollTop = 0;
+    scrollPending = false;
+  });
+}
+
 function addFeedRow(ev) {
   const attacksOnly = document.getElementById('attacks-only').checked;
   if (attacksOnly && !ev.is_attack) return;
@@ -777,7 +1231,7 @@ function addFeedRow(ev) {
   const blocked = ev.auto_blocked ? '🔒' : '';
 
   const row = document.createElement('tr');
-  row.style.animation = 'slideIn .3s';
+  row.style.animation = 'fadeInSimple 0.15s ease-out';
   row.style.cursor = 'pointer';
   row.dataset.hexdump = ev.hexdump || 'No raw payload captured for this flow.';
   row.onclick = () => {
@@ -801,7 +1255,7 @@ function addFeedRow(ev) {
     feedRows[0].remove(); feedRows.shift();
   }
   if (document.getElementById('auto-scroll').checked) {
-    document.getElementById('live-feed-container').scrollTop = 0;
+    triggerAutoScroll();
   }
 }
 
@@ -1028,6 +1482,435 @@ setInterval(()=>{
   if (activeTab==='tab-behavior') loadBehavior();
   if (activeTab==='tab-dns') loadDns();
 }, 30000);
+
+// Load health on startup
+fetch('/api/health').then(r=>r.json()).then(d=>{
+  if (d.model_ready) {
+    document.getElementById('model-badge').textContent = `Model: ${d.cv_accuracy} acc`;
+  }
+  if (d.honeypot_ports) {
+    document.getElementById('honeypot-badge').textContent = `🍯 ${d.honeypot_ports.length} ports`;
+  }
+  if (d.online_learner) {
+    document.getElementById('online-stats').innerHTML = `
+      <div style="color:var(--text2)">Enabled: ${d.online_learner.enabled?'✅':'❌'}</div>
+      <div style="color:var(--text2)">Samples trained: ${d.online_learner.n_trained}</div>
+      <div style="color:var(--text2)">Accuracy: ${d.online_learner.running_accuracy}%</div>`;
+  }
+  loadSettings();
+});
+
+// ── Threat Simulation ──────────────────────────────────────────────────────
+let simConsoleTimer = null;
+
+async function triggerSimulation(type) {
+  const status = document.getElementById('simulation-status');
+  status.textContent = 'Triggering...';
+  status.style.color = 'var(--yellow)';
+  
+  // Reset console
+  const consoleEl = document.getElementById('simulator-console');
+  const linesEl = document.getElementById('sim-console-lines');
+  linesEl.innerHTML = '';
+  consoleEl.style.display = 'block';
+  
+  if (simConsoleTimer) {
+    clearInterval(simConsoleTimer);
+  }
+  
+  try {
+    const r = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({type})
+    });
+    const d = await r.json();
+    if (d.status === 'success') {
+      status.textContent = `✅ Triggered ${type.toUpperCase()}`;
+      status.style.color = 'var(--green)';
+      
+      // Print logs typewriter style
+      let idx = 0;
+      const logs = d.logs || [];
+      
+      const printNextLog = () => {
+        if (idx < logs.length) {
+          const logLine = document.createElement('div');
+          logLine.style.marginBottom = '4px';
+          
+          if (logs[idx].includes('[SIMULATOR] Simulation completed') || logs[idx].includes('[SIMULATOR] Dispatched')) {
+            logLine.style.color = '#10b981'; // Green
+          } else if (logs[idx].includes('override') || logs[idx].includes('anomaly') || logs[idx].includes('Tunneling')) {
+            logLine.style.color = 'var(--pink)'; // Pink
+          } else {
+            logLine.style.color = '#e2e8f0'; // Default text color
+          }
+          
+          logLine.textContent = logs[idx];
+          linesEl.appendChild(logLine);
+          consoleEl.scrollTop = consoleEl.scrollHeight;
+          idx++;
+        } else {
+          clearInterval(simConsoleTimer);
+        }
+      };
+      
+      printNextLog();
+      simConsoleTimer = setInterval(printNextLog, 300);
+      
+    } else {
+      status.textContent = '❌ Failed';
+      status.style.color = 'var(--red)';
+      linesEl.innerHTML = '<div style="color:var(--red)">[ERROR] Simulation request rejected by backend system.</div>';
+    }
+  } catch(e) {
+    status.textContent = '❌ Connection Error';
+    status.style.color = 'var(--red)';
+    linesEl.innerHTML = '<div style="color:var(--red)">[ERROR] Failed to connect to local Flask server.</div>';
+  }
+  setTimeout(() => { status.textContent = ''; }, 6000);
+}
+
+// ── Settings Management ──────────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    
+    // Set switches
+    document.getElementById('settings-auto-block').checked = s.AUTO_BLOCK_ENABLED;
+    document.getElementById('settings-telegram-enabled').checked = s.TELEGRAM_ENABLED;
+    document.getElementById('settings-email-enabled').checked = s.EMAIL_ENABLED;
+    document.getElementById('settings-anomaly-enabled').checked = s.ANOMALY_DETECTION_ENABLED;
+    document.getElementById('settings-autoencoder-enabled').checked = s.AUTOENCODER_ENABLED;
+    document.getElementById('settings-online-enabled').checked = s.ONLINE_LEARNING_ENABLED;
+    
+    // Set values
+    document.getElementById('settings-block-threshold').value = s.BLOCK_THRESHOLD;
+    document.getElementById('settings-block-duration').value = s.BLOCK_DURATION;
+    document.getElementById('settings-telegram-token').value = s.TELEGRAM_BOT_TOKEN;
+    document.getElementById('settings-telegram-chat').value = s.TELEGRAM_CHAT_ID;
+    document.getElementById('settings-email-sender').value = s.ALERT_EMAIL_FROM;
+    document.getElementById('settings-email-password').value = s.ALERT_EMAIL_PASS;
+    document.getElementById('settings-email-recipient').value = s.ALERT_EMAIL_TO;
+    document.getElementById('settings-abuse-key').value = s.ABUSEIPDB_KEY;
+    
+    // Populate interface selector
+    const selectEl = document.getElementById('settings-interface');
+    selectEl.innerHTML = '';
+    
+    // Auto-detect option
+    const optAuto = document.createElement('option');
+    optAuto.value = '';
+    optAuto.textContent = '🔍 Auto-Detect Active (Recommended)';
+    selectEl.appendChild(optAuto);
+    
+    (s.interfaces || []).forEach(iface => {
+      const opt = document.createElement('option');
+      opt.value = iface.name;
+      opt.textContent = `${iface.description} (${iface.ip})`;
+      if (s.INTERFACE === iface.name) {
+        opt.selected = true;
+      }
+      selectEl.appendChild(opt);
+    });
+    
+    // Badge info
+    document.getElementById('current-iface-badge').textContent = s.current_interface || 'Auto-Detect';
+    
+  } catch(e) {
+    console.error('Failed to load settings:', e);
+  }
+}
+
+async function saveSettings() {
+  const payload = {
+    INTERFACE: document.getElementById('settings-interface').value,
+    AUTO_BLOCK_ENABLED: document.getElementById('settings-auto-block').checked,
+    BLOCK_THRESHOLD: parseInt(document.getElementById('settings-block-threshold').value) || 3,
+    BLOCK_DURATION: parseInt(document.getElementById('settings-block-duration').value) || 3600,
+    
+    TELEGRAM_ENABLED: document.getElementById('settings-telegram-enabled').checked,
+    TELEGRAM_BOT_TOKEN: document.getElementById('settings-telegram-token').value.trim(),
+    TELEGRAM_CHAT_ID: document.getElementById('settings-telegram-chat').value.trim(),
+    
+    EMAIL_ENABLED: document.getElementById('settings-email-enabled').checked,
+    ALERT_EMAIL_FROM: document.getElementById('settings-email-sender').value.trim(),
+    ALERT_EMAIL_PASS: document.getElementById('settings-email-password').value,
+    ALERT_EMAIL_TO: document.getElementById('settings-email-recipient').value.trim(),
+    
+    ABUSEIPDB_KEY: document.getElementById('settings-abuse-key').value.trim(),
+    ANOMALY_DETECTION_ENABLED: document.getElementById('settings-anomaly-enabled').checked,
+    AUTOENCODER_ENABLED: document.getElementById('settings-autoencoder-enabled').checked,
+    ONLINE_LEARNING_ENABLED: document.getElementById('settings-online-enabled').checked
+  };
+  
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.status === 'success') {
+      showSaveStatusNotification('✅ Configuration saved to .env & applied in-memory!');
+      loadSettings(); // refresh dropdown lists & badges
+    } else {
+      alert('❌ Failed to save settings');
+    }
+  } catch(e) {
+    alert('❌ Error connecting to server to save settings.');
+  }
+}
+
+function showSaveStatusNotification(message) {
+  const d = document.createElement('div');
+  d.className = `notif`;
+  d.style.borderColor = 'var(--green)';
+  d.style.borderLeft = '4px solid var(--green)';
+  d.innerHTML = `<b>🛡️ CyberGuard Settings</b><br><span style="color:var(--text2)">${message}</span>`;
+  const c = document.getElementById('notif-container');
+  c.appendChild(d);
+  setTimeout(()=>d.remove(), 4000);
+  playAlertSound('NORMAL');
+}
+
+// ── AI Security Posture Audit ────────────────────────────────────────────
+async function runAIAudit() {
+  appendChatMessage("Triggering live system diagnostic telemetry scan...", 'user');
+  const loadingId = appendChatMessage("Gathering server metrics and compiling AI report...", 'bot', true);
+  
+  try {
+    const r = await fetch('/api/ai/audit', { method: 'POST' });
+    const d = await r.json();
+    if (d.report) {
+      updateChatMessage(loadingId, d.report);
+    } else {
+      updateChatMessage(loadingId, "Failed to compile security report. Please check server logs.");
+    }
+  } catch(e) {
+    updateChatMessage(loadingId, "Error connecting to backend server for audit compilation.");
+  }
+}
+
+// ── Bandwidth Sparkline ──────────────────────────────────────────────────
+let bandwidthHistory = [];
+
+function drawBandwidthSparkline(speedHistory) {
+  const canvas = document.getElementById('bandwidth-sparkline');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width = canvas.clientWidth;
+  const h = canvas.height = canvas.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  
+  if (speedHistory.length < 2) return;
+  
+  const maxVal = Math.max(...speedHistory, 10.0);
+  ctx.beginPath();
+  ctx.strokeStyle = '#06b6d4';
+  ctx.lineWidth = 1.75;
+  
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(6, 182, 212, 0.35)');
+  grad.addColorStop(1, 'rgba(6, 182, 212, 0.0)');
+  
+  const step = w / (speedHistory.length - 1);
+  
+  ctx.moveTo(0, h - (speedHistory[0] / maxVal) * (h - 4));
+  for (let i = 1; i < speedHistory.length; i++) {
+    ctx.lineTo(i * step, h - (speedHistory[i] / maxVal) * (h - 4));
+  }
+  ctx.stroke();
+  
+  ctx.lineTo(w, h);
+  ctx.lineTo(0, h);
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
+// ── PDF Threat Report Generator ────────────────────────────────────────────
+function generatePDFReport() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  
+  // Header Design
+  doc.setFillColor(10, 14, 26); // Dark primary
+  doc.rect(0, 0, 210, 40, 'F');
+  
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(22);
+  doc.setFont("helvetica", "bold");
+  doc.text("CYBERGUARD IDS v4", 14, 20);
+  
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("EXECUTIVE THREAT & SECURITY REPORT", 14, 30);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, 145, 25);
+  
+  // Get Stats from UI
+  const totalFlows = document.getElementById('s-total').textContent || '0';
+  const totalAttacks = document.getElementById('s-attacks').textContent || '0';
+  const blockedIPs = document.getElementById('s-blocked').textContent || '0';
+  const honeypotHits = document.getElementById('s-honeypot').textContent || '0';
+  const cpuVal = document.getElementById('cpu-badge').textContent || '—';
+  const ramVal = document.getElementById('ram-badge').textContent || '—';
+  
+  let y = 55;
+  doc.setTextColor(17, 24, 39); // Dark grey text
+  
+  // Section 1: Executive Summary
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("1. Executive Summary", 14, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("This report summarizes network traffic analyzed and threats detected by the CyberGuard Intrusion", 14, y); y += 5;
+  doc.text("Detection System. Active firewall rules and packet analytics have been updated dynamically.", 14, y);
+  
+  y += 12;
+  
+  // Section 2: System Telemetry
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("2. System & Network Telemetry Status", 14, y);
+  y += 8;
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.text(`• Total Network Flows Scanned: ${totalFlows}`, 14, y); y += 6;
+  doc.text(`• Total Security Threats Blocked: ${totalAttacks}`, 14, y); y += 6;
+  doc.text(`• Active Firewall Blocked IPs: ${blockedIPs}`, 14, y); y += 6;
+  doc.text(`• Honeypot Decoy Traps Sprung: ${honeypotHits}`, 14, y); y += 6;
+  doc.text(`• System CPU Status: ${cpuVal}`, 14, y); y += 6;
+  doc.text(`• System RAM Memory Status: ${ramVal}`, 14, y);
+  
+  y += 15;
+  
+  // Section 3: Machine Learning Framework
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("3. Machine Learning Detection Framework", 14, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("• Supervised Model: XGBoost Classifier (accuracy on CICIDS2017 dataset is ~99%)", 14, y); y += 6;
+  doc.text("• Unsupervised Engine: Isolation Forest anomaly checker", 14, y); y += 6;
+  doc.text("• Zero-Day Protection: Neural Network Autoencoder trained on benign flow patterns", 14, y);
+  
+  y += 15;
+  
+  // Section 4: Blocked Attacking IPs
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("4. Active Blocked Host List", 14, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  
+  // Extract blocked IPs from the DOM
+  const blockedRows = document.querySelectorAll('#logs-tbody tr');
+  if (blockedRows.length > 0 && blockedRows[0].cells.length > 1) {
+    doc.text("Recent logged activity and blocked threats:", 14, y); y += 6;
+    let count = 0;
+    blockedRows.forEach(row => {
+      if (count < 8) {
+        const time = row.cells[0]?.textContent || '';
+        const ip = row.cells[1]?.textContent || '';
+        const label = row.cells[3]?.textContent || '';
+        const severity = row.cells[4]?.textContent || '';
+        doc.text(`- [${time}] IP: ${ip} | Type: ${label} | Severity: ${severity}`, 16, y);
+        y += 5.5;
+        count++;
+      }
+    });
+  } else {
+    doc.text("No active threats currently recorded in session logs.", 14, y);
+  }
+  
+  // Save Report
+  doc.save(`cyberguard_threat_report_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// ── AI Security Copilot Chatbot ────────────────────────────────────────────
+function toggleAICopilot() {
+  document.getElementById('ai-copilot-widget').classList.toggle('open');
+}
+
+async function sendChatMessage() {
+  const inputEl = document.getElementById('chat-input');
+  const msgText = inputEl.value.trim();
+  if (!msgText) return;
+  
+  inputEl.value = '';
+  appendChatMessage(msgText, 'user');
+  
+  const loadingId = appendChatMessage('Scanning project files live...', 'bot', true);
+  
+  try {
+    const response = await fetch('/api/ai/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: msgText })
+    });
+    const data = await response.json();
+    const botText = data.response || "No response received from local AI Analyst.";
+    updateChatMessage(loadingId, botText);
+  } catch(e) {
+    updateChatMessage(loadingId, "Error communicating with local AI Analyst server. Make sure the backend server is running.");
+  }
+}
+
+function appendChatMessage(text, sender, isLoading=false) {
+  const container = document.getElementById('chat-messages');
+  const msgEl = document.createElement('div');
+  const id = 'msg_' + Math.random().toString(36).substr(2, 9);
+  msgEl.id = id;
+  msgEl.className = `chat-msg ${sender}`;
+  msgEl.innerHTML = text.replace(/\n/g, '<br>');
+  container.appendChild(msgEl);
+  container.scrollTop = container.scrollHeight;
+  return id;
+}
+
+function updateChatMessage(id, newText) {
+  const msgEl = document.getElementById(id);
+  if (msgEl) {
+    msgEl.innerHTML = newText.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    const container = document.getElementById('chat-messages');
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+// Floating AI Copilot Widget HTML injection
+document.body.insertAdjacentHTML('beforeend', `
+<!-- Floating AI Copilot Widget -->
+<button id="ai-copilot-trigger" onclick="toggleAICopilot()">
+  💬 CyberGuard AI Copilot
+</button>
+
+<div id="ai-copilot-widget">
+  <div class="chat-header">
+    <span style="font-weight:600; display:flex; align-items:center; gap:6px;">🤖 CyberGuard Security Copilot</span>
+    <button class="btn btn-ghost btn-sm" onclick="toggleAICopilot()" style="padding:2px 6px;">✕</button>
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="chat-msg bot">
+      Hello! I am your <b>CyberGuard AI Security Copilot</b>. I run completely <b>offline</b> and scan your project codebase dynamically.<br><br>
+      Ask me anything about your project's components, config options, or files! (e.g. <i>"what is sniffer.py?"</i> or <i>"how does the ensemble detector work?"</i>)
+    </div>
+  </div>
+  <div style="padding:6px 12px; border-top:1px solid var(--border); display:flex; gap:6px; background:var(--panel);">
+    <button class="btn btn-ghost btn-sm" onclick="runAIAudit()" style="width:100%; display:flex; align-items:center; justify-content:center; gap:4px; border-color:var(--cyan); color:var(--cyan); font-size:10px; padding:4px 8px; font-weight:600; border-radius:4px;">🔍 Run Security Posture Audit</button>
+  </div>
+  <div class="chat-input-area">
+    <div class="chat-input-row">
+      <input type="text" class="chat-input" id="chat-input" placeholder="Ask about this project..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+      <button class="btn btn-primary" onclick="sendChatMessage()" style="padding:8px 14px;">Send</button>
+    </div>
+  </div>
+</div>
+`);
 
 // Load health on startup
 fetch('/api/health').then(r=>r.json()).then(d=>{
